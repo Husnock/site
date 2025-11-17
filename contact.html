@@ -214,10 +214,9 @@
         <a
           class="back-link"
           href="index.html"
-          >← Back</a
+          >← Terug</a
         >
 
-        <!-- Logo boven de titel -->
         <div class="logo-container">
           <img
             src="https://raw.githubusercontent.com/Husnock/site/eacab826f55fbb980a22698a1fbbcf9d6073b294/assets/LOGO.png"
@@ -225,34 +224,34 @@
           />
         </div>
 
-        <h1>Get in Touch</h1>
+        <h1>Neem contact op</h1>
         <p class="muted">
-          Do you have an idea, question, or project where Google Workspace and/or Apps Script could help?
-          Let me know – I’ll get back to you as soon as possible.
+          Heeft u een idee, vraag of project waarbij Google Workspace en/of Apps Script kan helpen?
+          Laat het me weten – ik neem zo snel mogelijk contact met u op.
         </p>
 
         <form id="contactForm">
-          <label for="name">Name</label>
-          <input type="text" id="name" name="name" placeholder="Your name" required />
+          <label for="name">Naam</label>
+          <input type="text" id="name" name="name" placeholder="Uw naam" required />
 
-          <label for="email">Email address</label>
-          <input type="email" id="email" name="email" placeholder="you@example.com" required />
+          <label for="email">E-mailadres</label>
+          <input type="email" id="email" name="email" placeholder="u@voorbeeld.nl" required />
 
-          <label for="message">Message</label>
+          <label for="message">Bericht</label>
           <textarea
             id="message"
             name="message"
-            placeholder="Let me know how I can help you..."
+            placeholder="Laat me weten hoe ik u kan helpen..."
             required
           ></textarea>
 
-          <button type="submit">Send message</button>
+          <button type="submit">Verstuur bericht</button>
         </form>
 
         <div class="success-message" id="successMessage">
-          ✅ Thanks! Your message has been sent.
+          ✅ Bedankt! Uw bericht is succesvol verzonden.
         </div>
-        <div class="error-message" id="errorMessage">❌ Something went wrong.</div>
+        <div class="error-message" id="errorMessage">❌ Er is iets misgegaan.</div>
       </div>
     </div>
 
@@ -283,16 +282,22 @@
             form.reset();
             setTimeout(() => successMessage.classList.remove("show"), 4000);
           } else {
+            // De foutmelding van de script-server wordt al in het Nederlands gegeven, 
+            // dus die hoeven we niet te vertalen, maar de fallback wel.
             errorMessage.textContent = `❌ ${result.error || "Er is iets misgegaan."}`;
             errorMessage.classList.add("show");
             setTimeout(() => errorMessage.classList.remove("show"), 4000);
           }
         } catch (err) {
-          errorMessage.textContent = `❌ ${err.message}`;
+          errorMessage.textContent = `❌ Er is een netwerkfout opgetreden: ${err.message}`;
           errorMessage.classList.add("show");
           setTimeout(() => errorMessage.classList.remove("show"), 4000);
         }
       });
     </script>
+
+    <footer>
+      &copy; 2025 Tab Digital. Alle rechten voorbehouden.
+    </footer>
   </body>
 </html>
