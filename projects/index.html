@@ -1,1 +1,154 @@
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <base target="_top" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Projecten | Tab Digital</title>
 
+    <link
+      href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/Husnock/site/eacab826f55fbb980a22698a1fbbcf9d6073b294/assets/LOGO.png">
+
+    <style>
+      :root {
+        --bg-dark: #0f172a;
+        --bg-card: #1e293b;
+        --bg-accent: #f97316;
+        --text-light: #f1f5f9;
+        --text-muted: #94a3b8;
+        --border-color: #334155;
+        --hover-bg: #273549;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        font-family: "Open Sans", sans-serif;
+        background: var(--bg-dark);
+        color: var(--text-light);
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+
+      .wrap {
+        flex: 1;
+        max-width: 600px;
+        margin: 32px auto;
+        padding: 0 12px;
+      }
+
+      .card {
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 16px 20px;
+        background: var(--bg-card);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+        position: relative;
+      }
+
+      .back-link {
+        position: absolute;
+        top: 12px;
+        left: 16px;
+        font-size: 13px;
+        color: var(--text-muted);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      .back-link:hover { color: var(--bg-accent); }
+
+      .logo-container {
+        text-align: center;
+        margin-bottom: 10px;
+        animation: fadeIn 1s ease;
+      }
+
+      .logo-container img { height: 60px; width: auto; border-radius: 8px; }
+
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-6px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      h1 { font-size: 22px; color: #fef3c7; margin-top: 0; margin-bottom: 8px; text-align: center; }
+
+      p.muted { color: var(--text-muted); margin-bottom: 18px; font-size: 14px; text-align: center; }
+
+      ul { list-style-type: none; padding-left: 15px; margin-top: 0; margin-bottom: 15px; }
+
+      li { margin-bottom: 5px; position: relative; padding-left: 15px; font-size: 15px; }
+
+      li span { position: absolute; left: 0; color: var(--bg-accent); }
+
+      footer {
+        background: #111;
+        color: #999;
+        text-align: center;
+        padding: 20px 0;
+        font-size: 13px;
+        margin-top: 24px;
+        border-top: 1px solid #1e293b;
+      }
+
+      footer a { color: var(--bg-accent); text-decoration: none; margin: 0 10px; font-weight: 500; }
+      footer a:hover { text-decoration: underline; }
+    </style>
+  </head>
+
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <a class="back-link" href="https://www.tabdigital.nl/">← Terug</a>
+
+        <div class="logo-container">
+          <img src="https://raw.githubusercontent.com/Husnock/site/eacab826f55fbb980a22698a1fbbcf9d6073b294/assets/LOGO.png" alt="Tab Digital Logo" />
+        </div>
+
+        <h1>Recente Projecten</h1>
+
+        <section style="margin-top: 20px; padding-top: 10px; border-top: 1px solid var(--border-color);">
+          <h2 style="font-size: 18px; color: var(--bg-accent); margin-top: 0; margin-bottom: 10px;">Projecten voor klanten</h2>
+
+          <h3 style="font-size: 16px; color: #fef3c7; margin-top: 15px; margin-bottom: 8px;">Automatisering & WebApps</h3>
+          <ul>
+            <li><span>•</span> Automatische factuurgenerator met PDF-emailfunctie</li>
+            <li><span>•</span> Shift generator voor personeelsplanning gebaseerd op beschikbaarheid en forecast</li>
+            <li><span>•</span> Geautomatiseerde rapportages en KPI-dashboards</li>
+            <li><span>•</span> API-koppelingen met interne systemen en externe tools</li>
+            <li><span>•</span> Volledig handsfree processen voor kleine en middelgrote bedrijven</li>
+          </ul>
+
+          <h3 style="font-size: 16px; color: #fef3c7; margin-top: 15px; margin-bottom: 8px;">Google Sheets & Data Tools</h3>
+          <ul>
+            <li><span>•</span> Capaciteitsplanningstools en forecastmodellen</li>
+            <li><span>•</span> Zelf-bijwerkende Sheets met automatische formules</li>
+            <li><span>•</span> Data-analyse en dashboards voor operationele inzichten</li>
+            <li><span>•</span> Optimalisatie van bestaande Sheets en onderhoudsabonnementen</li>
+          </ul>
+
+          <h3 style="font-size: 16px; color: #fef3c7; margin-top: 15px; margin-bottom: 8px;">Training & Consultancy</h3>
+          <ul>
+            <li><span>•</span> Teamtrainingen in geavanceerd gebruik van Sheets en automatiseringen</li>
+            <li><span>•</span> Procesoptimalisatie en advies op maat</li>
+            <li><span>•</span> Implementatie en onderhoud van interne tools</li>
+          </ul>
+
+          <p style="font-size: 15px; font-weight: 700; color: #fef3c7; line-height: 1.5; margin-top: 20px;">
+            Resultaat voor klanten: minder handwerk, efficiëntere processen en realtime inzicht in data.
+          </p>
+        </section>
+      </div>
+    </div>
+
+    <footer>
+      © 2025 Tab Digital. Alle rechten voorbehouden.
+    </footer>
+  </body>
+</html>
