@@ -301,6 +301,17 @@
 
     <footer>
     </footer>
-    <script> // set current year const yearSpan = document.createElement('span'); yearSpan.id = 'year'; yearSpan.textContent = new Date().getFullYear(); const footer = document.querySelector('footer'); if (footer) { // Zorg ervoor dat de voettekst in het Nederlands wordt weergegeven footer.innerHTML = &copy; ${yearSpan.textContent} Tab Digital. Alle rechten voorbehouden.; } </script>
+<script>
+  const year = new Date().getFullYear();
+  const footer = document.querySelector('footer');
+
+  if (footer) {
+    footer.innerHTML = `
+      &copy; ${year} Tab Digital ·
+      KvK: 99445476 ·
+      Contact:<a href="mailto:stijn@tabdigital.nl">stijn@tabdigital.nl</a>
+    `;
+  }
+</script>
   </body>
 </html>
