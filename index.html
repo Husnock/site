@@ -235,17 +235,17 @@
     <footer>
       </footer>
     
-    <script>
-      // set current year
-      const yearSpan = document.createElement('span');
-      yearSpan.id = 'year';
-      yearSpan.textContent = new Date().getFullYear();
+<script>
+  const year = new Date().getFullYear();
+  const footer = document.querySelector('footer');
 
-      const footer = document.querySelector('footer');
-      if (footer) {
-        // Zorg ervoor dat de voettekst in het Nederlands wordt weergegeven
-        footer.innerHTML = `&copy; ${yearSpan.textContent} Tab Digital. Alle rechten voorbehouden.`;
-      }
-    </script>
+  if (footer) {
+    footer.innerHTML = `
+      &copy; ${year} Tab Digital ·
+      KvK: 99445476 ·
+      <a href="contact/">Contact</a>
+    `;
+  }
+</script>
   </body>
 </html>
