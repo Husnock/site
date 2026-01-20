@@ -148,7 +148,18 @@
     </div>
 
     <footer>
-      © 2025 Tab Digital. Alle rechten voorbehouden.
     </footer>
+    <script>
+  const year = new Date().getFullYear();
+  const footer = document.querySelector('footer');
+
+  if (footer) {
+    footer.innerHTML = `
+      &copy; ${year} Tab Digital ·
+      KvK: 99445476 ·
+      Contact:<a href="mailto:stijn@tabdigital.nl">stijn@tabdigital.nl</a>
+    `;
+  }
+</script>
   </body>
 </html>
