@@ -4,15 +4,21 @@
     <base target="_top" />
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Contact | Tab Digital</title>
+    
+    <!-- SEO & Zichtbaarheid -->
+    <title>Contact | Tab Digital - Google Sheets & Automation Specialist</title>
+    <meta name="description" content="Kom in contact met Tab Digital. Laat ons weten hoe we jouw bedrijf kunnen helpen met Google Workspace automatisering, custom Apps Script tools en data dashboards." />
+    <meta name="robots" content="index, follow" />
 
-    <link
-      href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;700&display=swap"
-      rel="stylesheet"
-    />
+    <!-- Open Graph Tags (LinkedIn & WhatsApp) -->
+    <meta property="og:title" content="Contact | Tab Digital - Google Sheets & Automation Specialist" />
+    <meta property="og:description" content="Stel je vraag of leg je project aan ons voor. We helpen je graag slimmer werken." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://www.tabdigital.nl/contact" />
+    <meta property="og:image" content="https://raw.githubusercontent.com/Husnock/site/eacab826f55fbb980a22698a1fbbcf9d6073b294/assets/LOGO.png" />
 
-        <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/Husnock/site/eacab826f55fbb980a22698a1fbbcf9d6073b294/assets/LOGO.png">
-
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght=400;700&display=swap" rel="stylesheet" />
+    <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/Husnock/site/eacab826f55fbb980a22698a1fbbcf9d6073b294/assets/LOGO.png">
 
     <style>
       :root {
@@ -82,14 +88,8 @@
       }
 
       @keyframes fadeIn {
-        from {
-          opacity: 0;
-          transform: translateY(-6px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
+        from { opacity: 0; transform: translateY(-6px); }
+        to { opacity: 1; transform: translateY(0); }
       }
 
       h1 {
@@ -105,6 +105,7 @@
         margin-bottom: 18px;
         font-size: 14px;
         text-align: center;
+        line-height: 1.5;
       }
 
       form {
@@ -161,6 +162,14 @@
         box-shadow: 0 4px 10px rgba(249, 115, 22, 0.4);
       }
 
+      button:disabled {
+        background: var(--border-color);
+        color: var(--text-muted);
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+      }
+
       .success-message,
       .error-message {
         margin-top: 14px;
@@ -168,8 +177,7 @@
         border-radius: 10px;
         font-weight: 600;
         text-align: center;
-        opacity: 0;
-        transition: opacity 0.5s ease;
+        display: none;
         font-size: 14px;
       }
 
@@ -181,11 +189,6 @@
       .error-message {
         background: rgba(244, 63, 94, 0.2);
         color: #f43f5e;
-      }
-
-      .success-message.show,
-      .error-message.show {
-        opacity: 1;
       }
 
       footer {
@@ -209,22 +212,26 @@
         text-decoration: underline;
       }
     </style>
+
+    <!-- Gestructureerde data voor contactpagina -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "ContactPage",
+      "name": "Contact Tab Digital",
+      "description": "Neem contact op met Tab Digital voor Google Sheets en Apps Script oplossingen.",
+      "url": "https://www.tabdigital.nl/contact"
+    }
+    </script>
   </head>
 
   <body>
     <div class="wrap">
       <div class="card">
-        <a
-          class="back-link"
-          href="https://www.tabdigital.nl/"
-          >← Terug</a
-        >
+        <a class="back-link" href="https://www.tabdigital.nl/">← Terug</a>
 
         <div class="logo-container">
-          <img
-            src="https://raw.githubusercontent.com/Husnock/site/eacab826f55fbb980a22698a1fbbcf9d6073b294/assets/LOGO.png"
-            alt="Tab Digital Logo"
-          />
+          <img src="https://raw.githubusercontent.com/Husnock/site/eacab826f55fbb980a22698a1fbbcf9d6073b294/assets/LOGO.png" alt="Tab Digital Logo" />
         </div>
 
         <h1>Neem contact op</h1>
@@ -241,77 +248,91 @@
           <input type="email" id="email" name="email" placeholder="u@voorbeeld.nl" required />
 
           <label for="message">Bericht</label>
-          <textarea
-            id="message"
-            name="message"
-            placeholder="Laat me weten hoe ik u kan helpen..."
-            required
-          ></textarea>
+          <textarea id="message" name="message" placeholder="Laat me weten hoe ik u kan helpen..." required></textarea>
 
-          <button type="submit">Verstuur bericht</button>
+          <button type="submit" id="submitBtn">Verstuur bericht</button>
         </form>
 
         <div class="success-message" id="successMessage">
           ✅ Bedankt! Uw bericht is succesvol verzonden.
         </div>
-        <div class="error-message" id="errorMessage">❌ Er is iets misgegaan.</div>
+        <div class="error-message" id="errorMessage">
+          ❌ Er is iets misgegaan. Probeer het later nog eens.
+        </div>
       </div>
     </div>
 
+    <footer></footer>
+
     <script>
       const form = document.getElementById("contactForm");
+      const submitBtn = document.getElementById("submitBtn");
       const successMessage = document.getElementById("successMessage");
       const errorMessage = document.getElementById("errorMessage");
 
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
 
-        successMessage.classList.remove("show");
-        errorMessage.classList.remove("show");
+        // Reset UI-status
+        successMessage.style.display = "none";
+        errorMessage.style.display = "none";
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Bezig met verzenden...";
 
         const formData = new FormData(form);
         const params = new URLSearchParams();
-        for (const [key, value] of formData.entries()) params.append(key, value);
+        for (const [key, value] of formData.entries()) {
+          params.append(key, value);
+        }
 
         try {
+          // De fetch gebruikt nu een fallback-structuur die veiliger omgaat met Apps Script redirects
           const response = await fetch(
             "https://script.google.com/a/macros/tabdigital.nl/s/AKfycbymCpz36QvyetFVUOR3oHeAiH1NcPt2p6zTb99hyL2kBUTme5X-NZbznOIpxrJNsNwCqg/exec",
-            { method: "POST", body: params }
+            { 
+              method: "POST", 
+              body: params,
+              headers: {
+                "Content-Type": "application/x-www-form-urlencoded"
+              }
+            }
           );
-          const result = await response.json();
+          
+          let result;
+          try {
+            result = await response.json();
+          } catch(jsonErr) {
+            // Als de server wel slaagt maar geen geldige JSON terugstuurt (vrij algemeen bij redirects)
+            result = { success: response.ok };
+          }
 
           if (result.success) {
-            successMessage.classList.add("show");
+            successMessage.style.display = "block";
             form.reset();
-            setTimeout(() => successMessage.classList.remove("show"), 4000);
           } else {
-            // De foutmelding van de script-server wordt al in het Nederlands gegeven, 
-            // dus die hoeven we niet te vertalen, maar de fallback wel.
-            errorMessage.textContent = `❌ ${result.error || "Er is iets misgegaan."}`;
-            errorMessage.classList.add("show");
-            setTimeout(() => errorMessage.classList.remove("show"), 4000);
+            errorMessage.textContent = `❌ ${result.error || "Er is iets misgegaan bij het verwerken."}`;
+            errorMessage.style.display = "block";
           }
         } catch (err) {
-          errorMessage.textContent = `❌ Er is een netwerkfout opgetreden: ${err.message}`;
-          errorMessage.classList.add("show");
-          setTimeout(() => errorMessage.classList.remove("show"), 4000);
+          errorMessage.textContent = `❌ Netwerkfout: controleer uw verbinding of stuur direct een mail naar stijn@tabdigital.nl`;
+          errorMessage.style.display = "block";
+        } finally {
+          // Knop altijd weer herstellen
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Verstuur bericht";
         }
       });
+
+      // Dynamische footerdatum
+      const year = new Date().getFullYear();
+      const footer = document.querySelector('footer');
+      if (footer) {
+        footer.innerHTML = `
+          &copy; ${year} Tab Digital ·
+          KvK: 99445476 ·
+          Contact:<a href="mailto:stijn@tabdigital.nl">stijn@tabdigital.nl</a>
+        `;
+      }
     </script>
-
-    <footer>
-    </footer>
-<script>
-  const year = new Date().getFullYear();
-  const footer = document.querySelector('footer');
-
-  if (footer) {
-    footer.innerHTML = `
-      &copy; ${year} Tab Digital ·
-      KvK: 99445476 ·
-      Contact:<a href="mailto:stijn@tabdigital.nl">stijn@tabdigital.nl</a>
-    `;
-  }
-</script>
   </body>
 </html>
