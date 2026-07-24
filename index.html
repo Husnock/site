@@ -420,13 +420,81 @@ section{padding:100px 0; position:relative;}
    CTA / CONTACT
 ============================================ */
 .cta-section{
-  text-align:center;
+  text-align:left;
   padding:110px 0;
   position:relative;
 }
-.cta-section h2{font-size:clamp(28px,4vw,42px); margin-bottom:18px;}
-.cta-section p{color:var(--cream-dim); max-width:50ch; margin:0 auto 36px;}
-.cta-buttons{display:flex; gap:16px; justify-content:center; flex-wrap:wrap;}
+.cta-section h2{font-size:clamp(28px,4vw,38px); margin-bottom:16px;}
+.cta-section p{color:var(--cream-dim); max-width:46ch; margin:0 0 28px;}
+
+.contact-grid{
+  display:grid;
+  grid-template-columns:0.85fr 1.15fr;
+  gap:64px;
+  align-items:start;
+}
+.contact-intro .eyebrow{justify-content:flex-start;}
+.contact-direct{
+  margin-top:36px;
+  padding-top:24px;
+  border-top:1px solid var(--line);
+}
+.contact-direct .lbl{
+  display:block;
+  font-family:var(--mono); font-size:12.5px; letter-spacing:0.08em; text-transform:uppercase;
+  color:var(--gray); margin-bottom:8px;
+}
+.contact-direct a{color:var(--orange-lt); font-weight:600; font-size:16px;}
+.contact-direct a:hover{color:var(--blue-lt);}
+
+.contact-form{
+  background:var(--navy-2);
+  border:1px solid var(--line);
+  border-radius:8px;
+  padding:32px;
+}
+.form-row{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:20px;
+}
+.form-field{margin-bottom:20px;}
+.form-field label{
+  display:block;
+  font-family:var(--mono); font-size:12px; letter-spacing:0.06em; text-transform:uppercase;
+  color:var(--gray); margin-bottom:8px;
+}
+.form-field input,
+.form-field select,
+.form-field textarea{
+  width:100%;
+  background:var(--navy);
+  border:1px solid var(--line);
+  border-radius:4px;
+  padding:11px 14px;
+  color:var(--cream);
+  font-family:var(--body);
+  font-size:14.5px;
+  transition:border-color .2s ease;
+}
+.form-field textarea{resize:vertical; min-height:90px;}
+.form-field input:focus,
+.form-field select:focus,
+.form-field textarea:focus{
+  outline:none;
+  border-color:var(--orange);
+}
+.form-field select{
+  appearance:none;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23667484'><path d='M5.5 7.5l4.5 4.5 4.5-4.5z'/></svg>");
+  background-repeat:no-repeat;
+  background-position:right 12px center;
+  background-size:16px;
+  padding-right:36px;
+}
+.form-submit{width:100%; justify-content:center; border:none; cursor:pointer; margin-top:4px;}
+
+.cta-buttons{display:flex; gap:16px; flex-wrap:wrap;}
 
 footer{
   border-top:1px solid var(--line);
@@ -465,11 +533,13 @@ footer{
   .why-grid{grid-template-columns:repeat(2,1fr);}
   .scale-grid{grid-template-columns:1fr; gap:24px;}
   .projects-grid{grid-template-columns:1fr;}
+  .contact-grid{grid-template-columns:1fr; gap:36px;}
   .nav-links{display:none;}
   .nav-toggle{display:block;}
 }
 @media (max-width:560px){
   .why-grid{grid-template-columns:1fr;}
+  .form-row{grid-template-columns:1fr;}
   .hero-stats{flex-wrap:wrap; gap:24px;}
   .wrap{padding:0 20px;}
   .footer-bottom{flex-direction:column;}
@@ -724,12 +794,49 @@ footer{
 
 <section id="contact" class="cta-section">
   <div class="wrap">
-    <div class="eyebrow" style="justify-content:center;">Aan de slag</div>
-    <h2>Klaar om je data te laten werken?</h2>
-    <p>Plan een vrijblijvend gesprek en ontdek binnen dertig minuten waar de grootste tijdswinst in jouw processen zit.</p>
-    <div class="cta-buttons">
-      <a href="mailto:stijn@tabdigital.nl" class="btn btn-primary">Mail ons: stijn@tabdigital.nl</a>
-      <a href="#diensten" class="btn btn-ghost">Bekijk diensten</a>
+    <div class="contact-grid">
+      <div class="contact-intro reveal">
+        <div class="eyebrow">Aan de slag</div>
+        <h2>Klaar om je data te laten werken?</h2>
+        <p>Vul kort in waar je hulp bij zoekt — je e-mailprogramma opent automatisch met een vooringevuld bericht aan Stijn.</p>
+        <div class="contact-direct">
+          <span class="lbl">Of direct mailen:</span>
+          <a href="mailto:stijn@tabdigital.nl">stijn@tabdigital.nl</a>
+        </div>
+      </div>
+
+      <form class="contact-form reveal" id="contactForm">
+        <div class="form-row">
+          <div class="form-field">
+            <label for="cf-naam">Naam</label>
+            <input type="text" id="cf-naam" name="naam" required>
+          </div>
+          <div class="form-field">
+            <label for="cf-email">E-mailadres</label>
+            <input type="email" id="cf-email" name="email" required>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="cf-bedrijf">Bedrijfsnaam</label>
+            <input type="text" id="cf-bedrijf" name="bedrijf">
+          </div>
+          <div class="form-field">
+            <label for="cf-onderwerp">Waar kunnen we mee helpen?</label>
+            <select id="cf-onderwerp" name="onderwerp">
+              <option value="Google Sheets & data-analyse">Google Sheets &amp; data-analyse</option>
+              <option value="Automatisering & Apps Script">Automatisering &amp; Apps Script</option>
+              <option value="Training & consultancy">Training &amp; consultancy</option>
+              <option value="Iets anders">Iets anders</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="cf-bericht">Toelichting</label>
+          <textarea id="cf-bericht" name="bericht" rows="4" placeholder="Bijv. we typen nu nog handmatig data over uit meerdere Sheets..."></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary form-submit">Verstuur naar Stijn</button>
+      </form>
     </div>
   </div>
 </section>
@@ -752,6 +859,7 @@ footer{
     </div>
     <div class="footer-bottom">
       <span>© 2026 TabDigital. Alle rechten voorbehouden. KvK 99445476.</span>
+      <span>Gebouwd binnen Google Workspace.</span>
     </div>
   </div>
 </footer>
@@ -768,6 +876,28 @@ const io = new IntersectionObserver((entries)=>{
   });
 }, {threshold:0.12});
 revealEls.forEach(el=>io.observe(el));
+
+// contact form -> prefilled mailto
+const contactForm = document.getElementById('contactForm');
+if(contactForm){
+  contactForm.addEventListener('submit', function(e){
+    e.preventDefault();
+    const naam = document.getElementById('cf-naam').value.trim();
+    const email = document.getElementById('cf-email').value.trim();
+    const bedrijf = document.getElementById('cf-bedrijf').value.trim();
+    const onderwerp = document.getElementById('cf-onderwerp').value;
+    const bericht = document.getElementById('cf-bericht').value.trim();
+
+    const subject = `Contactaanvraag: ${onderwerp}`;
+    let body = `Naam: ${naam}\nE-mail: ${email}\n`;
+    if(bedrijf) body += `Bedrijf: ${bedrijf}\n`;
+    body += `Onderwerp: ${onderwerp}\n\n`;
+    body += bericht ? `Toelichting:\n${bericht}` : 'Toelichting: (geen toelichting ingevuld)';
+
+    const mailto = `mailto:stijn@tabdigital.nl?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = mailto;
+  });
+}
 </script>
 </body>
 </html>
