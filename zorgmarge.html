@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZorgMarge — Productiviteit & indirecte tijd</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#f4f6f8; --card:#ffffff; --ink:#12202b; --ink-soft:#5b6b76;
+    --line:#e4e9ed; --teal:#0e7c86; --teal-dark:#0a5c64; --teal-soft:#e6f3f3;
+    --amber:#c9822a; --amber-soft:#fbf0e0; --red:#c1443b; --red-soft:#fbeae8;
+    --green:#3c8a5b; --green-soft:#eaf5ee; --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  header{background:linear-gradient(135deg,var(--teal-dark),var(--teal));color:#fff;padding:28px 40px 34px;}
+  header .top{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;}
+  header h1{margin:0 0 4px;font-size:26px;letter-spacing:-0.02em;}
+  header p.sub{margin:0;color:#ffffff;opacity:.85;font-size:14px;max-width:640px;line-height:1.5;}
+  header .badge{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);border-radius:999px;padding:6px 14px;font-size:12.5px;white-space:nowrap;}
+  main{max-width:1240px;margin:-18px auto 60px;padding:0 24px;}
+  .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:28px;}
+  .kpi{background:var(--card);border-radius:var(--radius);padding:18px 20px;box-shadow:0 6px 18px rgba(15,45,55,.08);border:1px solid var(--line);}
+  .kpi .label{font-size:12px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;}
+  .kpi .value{font-size:26px;font-weight:650;letter-spacing:-0.01em;}
+  .kpi .foot{font-size:12px;color:var(--ink-soft);margin-top:4px;}
+  .kpi.margin .value{color:var(--teal-dark);}
+  section{margin-bottom:30px;}
+  section h2{font-size:17px;margin:0 0 3px;}
+  section .desc{font-size:13px;color:var(--ink-soft);margin:0 0 14px;max-width:760px;line-height:1.5;}
+  .grid-2{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;align-items:stretch;}
+  .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+  @media (max-width:920px){.grid-2,.grid-3{grid-template-columns:1fr;}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;box-shadow:0 4px 14px rgba(15,45,55,.05);}
+  .card h3{margin:0 0 12px;font-size:14.5px;color:var(--ink);}
+  .chart-wrap{position:relative;height:260px;}
+  .chart-wrap.tall{height:320px;}
+  table{width:100%;border-collapse:collapse;font-size:12.8px;}
+  th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);white-space:nowrap;}
+  th{color:var(--ink-soft);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;position:sticky;top:0;background:var(--card);}
+  tbody tr:hover{background:#fafcfc;}
+  .scroll{max-height:340px;overflow:auto;}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:600;}
+  .pill.good{background:var(--green-soft);color:var(--green);}
+  .pill.warn{background:var(--amber-soft);color:var(--amber);}
+  .pill.bad{background:var(--red-soft);color:var(--red);}
+  .num{font-variant-numeric:tabular-nums;text-align:right;}
+  footer{max-width:1240px;margin:0 auto 40px;padding:0 24px;color:var(--ink-soft);font-size:12px;line-height:1.6;border-top:1px solid var(--line);padding-top:16px;}
+  .loading{padding:60px;text-align:center;color:var(--ink-soft);font-size:14px;}
+  .legend-note{font-size:11.5px;color:var(--ink-soft);margin-top:8px;}
+  .tag{display:inline-block;background:var(--teal-soft);color:var(--teal-dark);border-radius:6px;padding:1px 7px;font-size:11px;margin-right:4px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="top">
+    <div>
+      <h1>ZorgMarge</h1>
+      <p class="sub">Productiviteit & indirecte tijd — inzicht in de verhouding directe/indirecte zorgtijd, reistijd, declarabiliteit en marge per team en cliënt. Verdiepingslaag boven WFM Hub, gebouwd voor MKB thuiszorgorganisaties.</p>
+    </div>
+    <div id="periodBadge" class="badge">Periode laden…</div>
+  </div>
+</header>
+
+<main>
+
+  <div id="app" class="loading">Data laden vanuit Supabase…</div>
+
+  <template id="tmpl-content">
+
+    <section class="kpi-row" id="kpiRow"></section>
+
+    <section>
+      <h2>Marge per team</h2>
+      <p class="desc">Omzet is alleen gebaseerd op declarabele directe zorgtijd (Zorg &amp; medische handelingen). Kosten zijn gebaseerd op álle geregistreerde tijd — dus ook reistijd, administratie en overdracht. Het verschil laat precies zien waar de marge weglekt.</p>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Omzet vs. kosten per team</h3>
+          <div class="chart-wrap"><canvas id="chartTeamMargin"></canvas></div>
+        </div>
+        <div class="card">
+          <h3>Teamoverzicht</h3>
+          <div class="scroll">
+            <table id="tblTeams"><thead><tr>
+              <th>Team</th><th class="num">Uren</th><th class="num">Direct%</th><th class="num">Marge</th>
+            </tr></thead><tbody></tbody></table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Directe vs. indirecte tijd</h2>
+      <p class="desc">Opbouw van geregistreerde uren per team, uitgesplitst naar activiteit. Directe zorgtijd is de enige tijd die vergoed wordt — reistijd, administratie, overdracht en overleg zijn onmisbaar maar niet-declarabel.</p>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Tijdsbesteding per team (uren)</h3>
+          <div class="chart-wrap tall"><canvas id="chartCategoryStack"></canvas></div>
+        </div>
+        <div class="card">
+          <h3>Medewerkers — productiviteitsratio</h3>
+          <div class="scroll">
+            <table id="tblEmployees"><thead><tr>
+              <th>Medewerker</th><th>Team</th><th class="num">Direct%</th><th class="num">Reistijd%</th><th class="num">Marge-bijdrage</th>
+            </tr></thead><tbody></tbody></table>
+          </div>
+          <p class="legend-note">Gesorteerd op laagste directe tijd% eerst — grootste verbeterkans bovenaan.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Reistijd-analyse</h2>
+      <p class="desc">Reistijd is de grootste sluipmoordenaar in thuiszorgmarges: onbetaald, maar onvermijdelijk. Onderstaand het aandeel reistijd per team en de gemiddelde reistijd per rit.</p>
+      <div class="grid-3">
+        <div class="card">
+          <h3>Reistijd % van totale tijd</h3>
+          <div class="chart-wrap"><canvas id="chartTravelPct"></canvas></div>
+        </div>
+        <div class="card">
+          <h3>Gem. reistijd per rit (min)</h3>
+          <div class="chart-wrap"><canvas id="chartTravelAvg"></canvas></div>
+        </div>
+        <div class="card">
+          <h3>Cliënten met hoogste reistijd</h3>
+          <div class="scroll" style="max-height:260px">
+            <table id="tblTravelClients"><thead><tr>
+              <th>Cliënt</th><th>Team</th><th class="num">Gem. rit (min)</th>
+            </tr></thead><tbody></tbody></table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Declarabiliteit % per cliënt / team</h2>
+      <p class="desc">Declarabiliteit = declarabele directe uren gedeeld door totaal geregistreerde uren. Cliënten onderaan de lijst kosten verhoudingsgewijs het meest aan niet-vergoede inzet.</p>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Declarabiliteit per team</h3>
+          <div class="chart-wrap"><canvas id="chartDeclarability"></canvas></div>
+        </div>
+        <div class="card">
+          <h3>Laagste declarabiliteit per cliënt</h3>
+          <div class="scroll">
+            <table id="tblClientDeclarability"><thead><tr>
+              <th>Cliënt</th><th>Team</th><th>Zorgzwaarte</th><th class="num">Declarabiliteit</th>
+            </tr></thead><tbody></tbody></table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Budget vs. werkelijke inzet</h2>
+      <p class="desc">Vergelijking van geïndiceerde (vergoede) zorguren per cliënt tegen daadwerkelijk geleverde directe zorguren over de gemeten periode. Grote afwijkingen — in beide richtingen — zijn een signaal voor herindicatie of planningsprobleem.</p>
+      <div class="card">
+        <h3>Grootste afwijkingen budget vs. realisatie</h3>
+        <div class="scroll">
+          <table id="tblBudget"><thead><tr>
+            <th>Cliënt</th><th>Team</th><th class="num">Budget (u)</th><th class="num">Realisatie (u)</th><th class="num">Afwijking</th><th>Status</th>
+          </tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Trend: omzet, kosten & marge per week</h2>
+      <p class="desc">Organisatiebreed, opgeteld over alle teams.</p>
+      <div class="card">
+        <div class="chart-wrap tall"><canvas id="chartTrend"></canvas></div>
+      </div>
+    </section>
+
+  </template>
+
+</main>
+
+<footer>
+  Fictieve demodata, gegenereerd ter illustratie — geen echte cliënt- of medewerkergegevens. ZorgMarge is een verdiepingslaag bovenop het WFM Hub datamodel (Supabase) en onderdeel van het TabDigital portfolio.
+</footer>
+
+<script>
+const SUPABASE_URL = "https://pacrnjumjmgulihconuz.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBhY3JuanVtam1ndWxpaGNvbnV6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0ODQxNzUsImV4cCI6MjEwMTA2MDE3NX0.K40b4Fgvyi2Dq2SBVcasIfKuh-fQYQtX5PcEz72-Plk";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const fmtEur = new Intl.NumberFormat('nl-NL', {style:'currency', currency:'EUR', maximumFractionDigits:0});
+const fmtPct = v => (v===null||v===undefined) ? '—' : v.toFixed(1).replace('.', ',') + '%';
+const fmtNum = (v,d=1) => (v===null||v===undefined) ? '—' : Number(v).toFixed(d).replace('.', ',');
+const fmtDate = s => new Date(s).toLocaleDateString('nl-NL', {day:'2-digit', month:'short'});
+
+const PALETTE = {
+  teal: '#0e7c86', tealSoft:'rgba(14,124,134,.55)',
+  amber: '#c9822a', amberSoft:'rgba(201,130,42,.6)',
+  red: '#c1443b', redSoft:'rgba(193,68,59,.55)',
+  green: '#3c8a5b',
+  slate: '#5b6b76',
+  cats: {
+    'ZORG':'#0e7c86','MED':'#0a5c64','REIS':'#c9822a','ADM':'#5b6b76','OVER':'#8aa5ad','OVERLEG':'#c1443b','SCHOL':'#9b8fd8'
+  }
+};
+
+function pillFor(pct, goodMin, warnMin){
+  if(pct === null || pct === undefined) return '<span class="pill warn">n.v.t.</span>';
+  if(pct >= goodMin) return `<span class="pill good">${fmtPct(pct)}</span>`;
+  if(pct >= warnMin) return `<span class="pill warn">${fmtPct(pct)}</span>`;
+  return `<span class="pill bad">${fmtPct(pct)}</span>`;
+}
+
+// PostgREST/supabase-js can return numeric columns as strings; normalize to real numbers
+// so arithmetic, sorting and Chart.js scales all behave predictably.
+function coerceNumbers(obj){
+  if(Array.isArray(obj)) return obj.map(coerceNumbers);
+  if(obj && typeof obj === 'object'){
+    const out = {};
+    for(const [k,v] of Object.entries(obj)){
+      out[k] = (typeof v === 'string' && v.trim() !== '' && !isNaN(v)) ? Number(v) : v;
+    }
+    return out;
+  }
+  return obj;
+}
+
+async function loadAll(){
+  const [org, teams, employees, clients, weekly, teamCats] = await Promise.all([
+    sb.from('zm_v_org_summary').select('*').single(),
+    sb.from('zm_v_team_kpi').select('*'),
+    sb.from('zm_v_employee_kpi').select('*'),
+    sb.from('zm_v_client_kpi').select('*'),
+    sb.from('zm_v_weekly_trend').select('*'),
+    sb.from('zm_v_team_category_breakdown').select('*'),
+  ]);
+
+  const errs = [org, teams, employees, clients, weekly, teamCats].filter(r => r.error);
+  if(errs.length){
+    document.getElementById('app').innerHTML =
+      '<div class="loading">Kon geen verbinding maken met de Supabase database.<br><small>' +
+      errs.map(e=>e.error.message).join('<br>') + '</small></div>';
+    return;
+  }
+
+  render(
+    coerceNumbers(org.data), coerceNumbers(teams.data), coerceNumbers(employees.data),
+    coerceNumbers(clients.data), coerceNumbers(weekly.data), coerceNumbers(teamCats.data)
+  );
+}
+
+function render(org, teams, employees, clients, weekly, teamCats){
+  document.getElementById('periodBadge').textContent =
+    `${fmtDate(org.period_start)} — ${fmtDate(org.period_end)} · ${org.employee_count} medewerkers · ${org.client_count} cliënten`;
+
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  app.className = '';
+  const tmpl = document.getElementById('tmpl-content').content.cloneNode(true);
+  app.appendChild(tmpl);
+
+  // --- KPI cards ---
+  const marginPct = org.revenue_eur ? (org.margin_eur / org.revenue_eur * 100) : 0;
+  const kpis = [
+    {label:'Marge (periode)', value: fmtEur.format(org.margin_eur), foot: `${fmtPct(marginPct)} van omzet`, cls:'margin'},
+    {label:'Omzet vs. kosten', value: fmtEur.format(org.revenue_eur), foot: `Kosten: ${fmtEur.format(org.cost_eur)}`},
+    {label:'Directe zorgtijd', value: fmtPct(org.direct_pct), foot: `${fmtNum(org.direct_hours,0)} van ${fmtNum(org.total_hours,0)} uur`},
+    {label:'Declarabiliteit', value: fmtPct(org.declarability_pct), foot: 'declarabel / totaal'},
+    {label:'Reistijd', value: fmtPct(org.travel_pct), foot: `${fmtNum(org.travel_hours,0)} uur onbetaald`},
+  ];
+  const kpiRow = document.getElementById('kpiRow');
+  kpiRow.innerHTML = kpis.map(k => `
+    <div class="kpi ${k.cls||''}">
+      <div class="label">${k.label}</div>
+      <div class="value">${k.value}</div>
+      <div class="foot">${k.foot}</div>
+    </div>`).join('');
+
+  // --- Team margin chart ---
+  new Chart(document.getElementById('chartTeamMargin'), {
+    type:'bar',
+    data:{
+      labels: teams.map(t=>t.team_name),
+      datasets:[
+        {label:'Omzet', data: teams.map(t=>t.revenue_eur), backgroundColor: PALETTE.teal, borderRadius:5},
+        {label:'Kosten', data: teams.map(t=>t.cost_eur), backgroundColor: PALETTE.red, borderRadius:5},
+      ]
+    },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom', labels:{boxWidth:10,font:{size:11}}}},
+      scales:{ y:{ ticks:{ callback:v=>fmtEur.format(v) } } } }
+  });
+
+  // --- Team table ---
+  document.querySelector('#tblTeams tbody').innerHTML = teams.map(t => `
+    <tr>
+      <td>${t.team_name}<br><small style="color:var(--ink-soft)">${t.region}</small></td>
+      <td class="num">${fmtNum(t.total_hours,0)}</td>
+      <td class="num">${pillFor(t.direct_pct, 65, 55)}</td>
+      <td class="num">${fmtEur.format(t.margin_eur)}</td>
+    </tr>`).join('');
+
+  // --- Category stacked chart per team ---
+  const catCodes = ['ZORG','MED','REIS','ADM','OVER','OVERLEG','SCHOL'];
+  const catLabels = {ZORG:'Zorg', MED:'Medisch/verpleegk.', REIS:'Reistijd', ADM:'Administratie', OVER:'Overdracht', OVERLEG:'Teamoverleg', SCHOL:'Scholing'};
+  const teamNames = teams.map(t=>t.team_name);
+  const catDatasets = catCodes.map(code => ({
+    label: catLabels[code],
+    data: teamNames.map(tn => {
+      const row = teamCats.find(r => r.team_name===tn && r.category_code===code);
+      return row ? row.hours : 0;
+    }),
+    backgroundColor: PALETTE.cats[code],
+    stack: 'x'
+  }));
+  new Chart(document.getElementById('chartCategoryStack'), {
+    type:'bar',
+    data:{ labels: teamNames, datasets: catDatasets },
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom', labels:{boxWidth:10,font:{size:10.5}}}},
+      scales:{ x:{ stacked:true, title:{display:true,text:'Uren'} }, y:{ stacked:true } } }
+  });
+
+  // --- Employee table (sorted worst direct% first) ---
+  const empSorted = [...employees].sort((a,b)=>a.direct_pct - b.direct_pct);
+  document.querySelector('#tblEmployees tbody').innerHTML = empSorted.map(e => `
+    <tr>
+      <td>${e.employee_name}<br><small style="color:var(--ink-soft)">${e.role}</small></td>
+      <td>${e.team_name}</td>
+      <td class="num">${pillFor(e.direct_pct, 65, 55)}</td>
+      <td class="num">${fmtPct(e.travel_pct)}</td>
+      <td class="num">${fmtEur.format(e.margin_eur)}</td>
+    </tr>`).join('');
+
+  // --- Travel charts ---
+  new Chart(document.getElementById('chartTravelPct'), {
+    type:'bar',
+    data:{ labels: teamNames, datasets:[{ data: teams.map(t=>t.travel_pct), backgroundColor: PALETTE.amber, borderRadius:5 }]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+      scales:{ y:{ ticks:{ callback:v=>v+'%' } } } }
+  });
+  new Chart(document.getElementById('chartTravelAvg'), {
+    type:'bar',
+    data:{ labels: teamNames, datasets:[{ data: teams.map(t=>t.avg_travel_min_per_rit), backgroundColor: PALETTE.slate, borderRadius:5 }]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+      scales:{ y:{ ticks:{ callback:v=>v+' min' } } } }
+  });
+
+  const topTravelClients = [...clients].sort((a,b)=>b.travel_minutes_avg - a.travel_minutes_avg).slice(0,10);
+  document.querySelector('#tblTravelClients tbody').innerHTML = topTravelClients.map(c => `
+    <tr><td>${c.client_code}</td><td>${c.team_name}</td><td class="num">${fmtNum(c.travel_minutes_avg,0)}</td></tr>`).join('');
+
+  // --- Declarability ---
+  new Chart(document.getElementById('chartDeclarability'), {
+    type:'bar',
+    data:{ labels: teamNames, datasets:[{ data: teams.map(t=>t.declarability_pct), backgroundColor: teams.map(t=>t.declarability_pct>=65?PALETTE.teal:(t.declarability_pct>=55?PALETTE.amber:PALETTE.red)), borderRadius:5 }]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+      scales:{ y:{ suggestedMax:100, ticks:{ callback:v=>v+'%' } } } }
+  });
+
+  const worstDeclarability = [...clients].sort((a,b)=>a.declarability_pct - b.declarability_pct).slice(0,12);
+  document.querySelector('#tblClientDeclarability tbody').innerHTML = worstDeclarability.map(c => `
+    <tr>
+      <td>${c.client_code}</td><td>${c.team_name}</td><td style="text-transform:capitalize">${c.zorgzwaarte}</td>
+      <td class="num">${pillFor(c.declarability_pct, 65, 55)}</td>
+    </tr>`).join('');
+
+  // --- Budget vs actual ---
+  const budgetRows = [...clients].sort((a,b)=> Math.abs(b.variance_hours) - Math.abs(a.variance_hours)).slice(0,15);
+  document.querySelector('#tblBudget tbody').innerHTML = budgetRows.map(c => {
+    const absPct = c.budgeted_hours_period ? Math.abs(c.variance_hours)/c.budgeted_hours_period*100 : 0;
+    let status;
+    if(absPct <= 10) status = '<span class="pill good">Op koers</span>';
+    else if(absPct <= 25) status = '<span class="pill warn">Afwijking</span>';
+    else status = c.variance_hours < 0 ? '<span class="pill bad">Onderrealisatie</span>' : '<span class="pill bad">Overrealisatie</span>';
+    return `<tr>
+      <td>${c.client_code}</td><td>${c.team_name}</td>
+      <td class="num">${fmtNum(c.budgeted_hours_period,1)}</td>
+      <td class="num">${fmtNum(c.direct_hours,1)}</td>
+      <td class="num">${c.variance_hours>0?'+':''}${fmtNum(c.variance_hours,1)}</td>
+      <td>${status}</td>
+    </tr>`;
+  }).join('');
+
+  // --- Weekly trend (org-wide, summed across teams) ---
+  const weekMap = new Map();
+  weekly.forEach(w => {
+    const key = w.week_start;
+    if(!weekMap.has(key)) weekMap.set(key, {week: key, revenue:0, cost:0, margin:0});
+    const row = weekMap.get(key);
+    row.revenue += Number(w.revenue_eur);
+    row.cost += Number(w.cost_eur);
+    row.margin += Number(w.margin_eur);
+  });
+  const weeks = [...weekMap.values()].sort((a,b)=> new Date(a.week) - new Date(b.week));
+  new Chart(document.getElementById('chartTrend'), {
+    type:'line',
+    data:{
+      labels: weeks.map(w=>fmtDate(w.week)),
+      datasets:[
+        {label:'Omzet', data: weeks.map(w=>w.revenue), borderColor: PALETTE.teal, backgroundColor:'transparent', tension:.3},
+        {label:'Kosten', data: weeks.map(w=>w.cost), borderColor: PALETTE.red, backgroundColor:'transparent', tension:.3},
+        {label:'Marge', data: weeks.map(w=>w.margin), borderColor: PALETTE.slate, borderDash:[5,4], backgroundColor:'transparent', tension:.3},
+      ]
+    },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom', labels:{boxWidth:10,font:{size:11}}}},
+      scales:{ y:{ ticks:{ callback:v=>fmtEur.format(v) } } } }
+  });
+}
+
+loadAll();
+</script>
+</body>
+</html>
