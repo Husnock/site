@@ -1,0 +1,1809 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TabCalculator — Real-time projectnacalculatie</title>
+<meta name="description" content="TabCalculator: real-time projectnacalculatie voor bouw- en installatiebedrijven — marge, risico en forecast per project, team en cliënt.">
+<style>
+  html,body{margin:0;padding:0;background:#E6E6E8;}
+  #root{min-height:100vh;}
+  .tc-loading{padding:60px;font-family:sans-serif;color:#57666c;}
+  .tc-fatal{padding:40px;font-family:sans-serif;color:#a1341a;white-space:pre-wrap;}
+</style>
+</head>
+<body>
+<div id="root"><div class="tc-loading">TabCalculator laden…</div></div>
+
+<!-- Fixed, stable UMD builds — no in-browser JSX/module compilation needed -->
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/prop-types@15/prop-types.min.js"></script>
+<script src="https://unpkg.com/recharts@2/umd/Recharts.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script>
+  // Fail loudly and visibly instead of leaving the page stuck on "laden…"
+  window.addEventListener('error', function (e) {
+    var root = document.getElementById('root');
+    if (root && root.querySelector('.tc-loading')) {
+      root.innerHTML = '<div class="tc-fatal">TabCalculator kon niet laden.\\n\\n' +
+        (e.message || 'Onbekende fout') + '\\n\\nControleer of alle CDN-scripts (React, Recharts, Supabase) geladen zijn (zie browserconsole).</div>';
+    }
+  });
+  ['React','ReactDOM','Recharts','supabase'].forEach(function(name){
+    if (!window[name]) {
+      console.error('Ontbrekende library: ' + name + ' (CDN-script niet geladen)');
+    }
+  });
+</script>
+
+<script>
+const {
+  useEffect,
+  useState,
+  useMemo
+} = React;
+const {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceLine,
+  BarChart,
+  Bar,
+  Cell,
+  ScatterChart,
+  Scatter,
+  ZAxis
+} = Recharts;
+
+// Small inline icon components (replaces lucide-react to avoid an extra CDN/ESM dependency)
+function iconSvg(paths, extra) {
+  return function Icon({
+    size = 16,
+    style = {}
+  }) {
+    return /*#__PURE__*/React.createElement("svg", {
+      width: size,
+      height: size,
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2",
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      style: style
+    }, paths);
+  };
+}
+const ArrowLeft = iconSvg(/*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("path", {
+  d: "M19 12H5"
+}), /*#__PURE__*/React.createElement("path", {
+  d: "m12 19-7-7 7-7"
+})));
+const TriangleAlert = iconSvg(/*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("path", {
+  d: "m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"
+}), /*#__PURE__*/React.createElement("path", {
+  d: "M12 9v4"
+}), /*#__PURE__*/React.createElement("path", {
+  d: "M12 17h.01"
+})));
+const CircleCheck = iconSvg(/*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("circle", {
+  cx: "12",
+  cy: "12",
+  r: "10"
+}), /*#__PURE__*/React.createElement("path", {
+  d: "m9 12 2 2 4-4"
+})));
+const CircleAlert = iconSvg(/*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("circle", {
+  cx: "12",
+  cy: "12",
+  r: "10"
+}), /*#__PURE__*/React.createElement("path", {
+  d: "M12 8v4"
+}), /*#__PURE__*/React.createElement("path", {
+  d: "M12 16h.01"
+})));
+const Clock = iconSvg(/*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("circle", {
+  cx: "12",
+  cy: "12",
+  r: "10"
+}), /*#__PURE__*/React.createElement("path", {
+  d: "M12 6v6l4 2"
+})));
+const PauseCircle = iconSvg(/*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("circle", {
+  cx: "12",
+  cy: "12",
+  r: "10"
+}), /*#__PURE__*/React.createElement("path", {
+  d: "M10 15V9"
+}), /*#__PURE__*/React.createElement("path", {
+  d: "M14 15V9"
+})));
+
+// Data-snapshot uit het TabCalc Supabase-project (pfhyjcgzthruobvrlpbs).
+// Artifacts draaien in een sandbox zonder uitgaand netwerkverkeer naar externe API's,
+// daarom wordt hier een snapshot gebruikt i.p.v. een live fetch. Bij het echt hosten
+// van deze tool (buiten de Claude-sandbox) kan dit weer vervangen worden door een
+// live fetch naar de Supabase REST API met dezelfde tabelstructuur.
+const SUPABASE_URL = "https://pfhyjcgzthruobvrlpbs.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBmaHlqY2d6dGhydW9idnJscGJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU5MDA1NzcsImV4cCI6MjEwMTQ3NjU3N30.kWBHBIeczaBLyDhby7xQiJFSuar4UJyeMMuoz0jbSSE";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Maps the internal data-key names used throughout this component to the
+// actual Supabase table names.
+const TABLE_MAP = {
+  projects: "projects",
+  clients: "clients",
+  employees: "employees",
+  budgetLines: "project_budget_lines",
+  weeklyActuals: "weekly_actuals",
+  progress: "project_progress",
+  changeOrders: "change_orders",
+  invoices: "invoices",
+  historicalBenchmarks: "historical_benchmarks",
+  employeeUtilization: "employee_utilization"
+};
+async function fetchTable(name) {
+  const table = TABLE_MAP[name] || name;
+  const {
+    data,
+    error
+  } = await sb.from(table).select("*");
+  if (error) throw error;
+  return data;
+}
+const fmtEUR = n => new Intl.NumberFormat("nl-NL", {
+  style: "currency",
+  currency: "EUR",
+  maximumFractionDigits: 0
+}).format(n || 0);
+const fmtPct = n => `${n >= 0 ? "" : ""}${(n || 0).toFixed(1)}%`;
+const fmtDate = d => new Date(d).toLocaleDateString("nl-NL", {
+  day: "2-digit",
+  month: "short",
+  year: "numeric"
+});
+const CATS = ["Arbeid", "Materiaal", "Materieel", "Onderaanneming"];
+
+// ---- risk model -------------------------------------------------------
+function computeRisk(project, budgetTotal, actualTotal, progressPct) {
+  if (project.status === "Voorbereiding") return {
+    key: "voorbereiding",
+    label: "NOG NIET GESTART"
+  };
+  if (project.status === "On hold") return {
+    key: "onhold",
+    label: "GEPAUZEERD"
+  };
+  const isDone = project.status === "Afgerond";
+  const forecast = isDone ? actualTotal : progressPct > 3 ? actualTotal / (progressPct / 100) : actualTotal > 0 ? actualTotal * 6 : budgetTotal;
+  const deviationPct = budgetTotal > 0 ? (forecast - budgetTotal) / budgetTotal * 100 : 0;
+  let key = "groen",
+    label = "OP SCHEMA";
+  if (deviationPct > 15) {
+    key = "rood";
+    label = isDone ? "OVERSCHREDEN" : "ACTIE VEREIST";
+  } else if (deviationPct > 5) {
+    key = "oranje";
+    label = isDone ? "LICHT OVERSCHREDEN" : "AANDACHT";
+  } else if (isDone) {
+    label = "BINNEN BUDGET";
+  }
+  return {
+    key,
+    label,
+    deviationPct,
+    forecast
+  };
+}
+
+// ---- trend extrapolation (recent burn-rate, not just %-complete) ------
+function computeTrendForecast(p, actuals, progressRows, budgetTotal, actualTotal) {
+  if (p.status !== "Lopend" || progressRows.length < 3) return null;
+  const weekStarts = [...new Set(actuals.map(a => a.week_start))].sort();
+  const weeklyTotals = weekStarts.map(ws => actuals.filter(a => a.week_start === ws).reduce((s, a) => s + Number(a.werkelijke_kosten), 0));
+  if (weeklyTotals.length < 3) return null;
+  const totalWeeks = Math.max(weeklyTotals.length, Math.round((new Date(p.verwachte_einddatum) - new Date(p.startdatum)) / (7 * 24 * 3600 * 1000)));
+  const weeksRemaining = Math.max(totalWeeks - weeklyTotals.length, 1);
+  const recentN = Math.min(4, weeklyTotals.length);
+  const recentAvg = weeklyTotals.slice(-recentN).reduce((s, v) => s + v, 0) / recentN;
+  const priorSlice = weeklyTotals.slice(0, -recentN);
+  const priorAvg = priorSlice.length ? priorSlice.reduce((s, v) => s + v, 0) / priorSlice.length : weeklyTotals.reduce((s, v) => s + v, 0) / weeklyTotals.length;
+  const trendForecast = actualTotal + recentAvg * weeksRemaining;
+  const trendDeviationPct = budgetTotal > 0 ? (trendForecast - budgetTotal) / budgetTotal * 100 : 0;
+  const accelerationPct = priorAvg > 0 ? (recentAvg - priorAvg) / priorAvg * 100 : 0;
+  const impactEUR = trendForecast - budgetTotal;
+  return {
+    recentN,
+    recentAvg,
+    priorAvg,
+    accelerationPct,
+    trendForecast,
+    trendDeviationPct,
+    impactEUR,
+    weeksRemaining
+  };
+}
+
+// ---- margin bridge / waterfall ----------------------------------------
+function buildWaterfall(p) {
+  const isDone = p.status === "Afgerond";
+  const categoryForecast = cat => {
+    const actual = p.actuals.filter(a => a.categorie === cat).reduce((s, a) => s + Number(a.werkelijke_kosten), 0);
+    if (isDone) return actual;
+    return p.progressPct > 3 ? actual / (p.progressPct / 100) : actual;
+  };
+  const begrootPerCat = {};
+  CATS.forEach(cat => {
+    begrootPerCat[cat] = Number(p.budgetLines.find(b => b.categorie === cat)?.begroot_bedrag || 0);
+  });
+  const begroteMarge = p.contractsom - p.budgetTotal;
+  const erkendMeerwerk = p.changeOrders.filter(c => ["Goedgekeurd", "Gefactureerd"].includes(c.status)).reduce((s, c) => s + Number(c.bedrag), 0);
+  const steps = [{
+    name: "Begrote marge",
+    type: "total",
+    value: begroteMarge
+  }];
+  let running = begroteMarge;
+  if (erkendMeerwerk > 1) {
+    steps.push({
+      name: "Erkend meerwerk",
+      type: "delta",
+      delta: erkendMeerwerk
+    });
+    running += erkendMeerwerk;
+  }
+  CATS.forEach(cat => {
+    const forecast = categoryForecast(cat);
+    const delta = -(forecast - begrootPerCat[cat]);
+    if (Math.abs(delta) > 1) {
+      steps.push({
+        name: cat,
+        type: "delta",
+        delta
+      });
+      running += delta;
+    }
+  });
+  steps.push({
+    name: isDone ? "Werkelijk resultaat" : "Verwacht eindresultaat",
+    type: "total",
+    value: running
+  });
+  let cum = 0;
+  return steps.map(s => {
+    if (s.type === "total") {
+      cum = s.value;
+      return {
+        name: s.name,
+        base: 0,
+        bar: s.value,
+        isTotal: true,
+        display: s.value
+      };
+    }
+    const start = cum;
+    const end = cum + s.delta;
+    cum = end;
+    return {
+      name: s.name,
+      base: Math.min(start, end),
+      bar: Math.abs(s.delta),
+      isTotal: false,
+      display: s.delta,
+      positive: s.delta >= 0
+    };
+  });
+}
+function WaterfallChart({
+  steps
+}) {
+  const abbrev = n => {
+    const abs = Math.abs(n);
+    if (abs >= 1000) return `${n < 0 ? "-" : ""}€${(abs / 1000).toFixed(0)}k`;
+    return fmtEUR(n);
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    className: "chart-wrap"
+  }, /*#__PURE__*/React.createElement(ResponsiveContainer, {
+    width: "100%",
+    height: "100%"
+  }, /*#__PURE__*/React.createElement(BarChart, {
+    data: steps,
+    margin: {
+      top: 24,
+      right: 16,
+      left: -10,
+      bottom: 0
+    }
+  }, /*#__PURE__*/React.createElement(CartesianGrid, {
+    stroke: "rgba(28,43,51,0.10)",
+    vertical: false
+  }), /*#__PURE__*/React.createElement(XAxis, {
+    dataKey: "name",
+    tick: {
+      fontSize: 10.5,
+      fontFamily: "IBM Plex Mono"
+    },
+    stroke: "#57666c",
+    interval: 0,
+    angle: -12,
+    textAnchor: "end",
+    height: 50
+  }), /*#__PURE__*/React.createElement(YAxis, {
+    tick: {
+      fontSize: 10.5,
+      fontFamily: "IBM Plex Mono"
+    },
+    stroke: "#57666c",
+    tickFormatter: abbrev
+  }), /*#__PURE__*/React.createElement(Tooltip, {
+    contentStyle: {
+      fontFamily: "IBM Plex Mono",
+      fontSize: 12,
+      border: "1px solid #1C2B33"
+    },
+    formatter: (v, name, props) => [fmtEUR(props.payload.display), props.payload.isTotal ? "Totaal" : "Mutatie"]
+  }), /*#__PURE__*/React.createElement(Bar, {
+    dataKey: "base",
+    stackId: "a",
+    fill: "transparent",
+    isAnimationActive: false
+  }), /*#__PURE__*/React.createElement(Bar, {
+    dataKey: "bar",
+    stackId: "a",
+    isAnimationActive: false
+  }, steps.map((s, i) => /*#__PURE__*/React.createElement(Cell, {
+    key: i,
+    fill: s.isTotal ? "#2B4C6F" : s.positive ? "#3C7A5C" : "#B8391A"
+  }))))));
+}
+const RISK_COLORS = {
+  groen: {
+    bg: "#e4ede4",
+    ink: "#3c7a5c",
+    ring: "#3c7a5c"
+  },
+  oranje: {
+    bg: "#f3e6d3",
+    ink: "#a36a12",
+    ring: "#b9791a"
+  },
+  rood: {
+    bg: "#f3ddd4",
+    ink: "#a1341a",
+    ring: "#b8391a"
+  },
+  voorbereiding: {
+    bg: "#e4e6e9",
+    ink: "#4a5a61",
+    ring: "#8a97a0"
+  },
+  onhold: {
+    bg: "#e9e4d8",
+    ink: "#7a6a3c",
+    ring: "#a3922f"
+  }
+};
+function StampBadge({
+  risk,
+  size = "md"
+}) {
+  const c = RISK_COLORS[risk.key];
+  return /*#__PURE__*/React.createElement("span", {
+    className: "stamp",
+    style: {
+      color: c.ink,
+      borderColor: c.ring,
+      background: c.bg,
+      fontSize: size === "sm" ? 10.5 : 12.5,
+      padding: size === "sm" ? "3px 8px" : "5px 12px"
+    }
+  }, risk.label);
+}
+function StatusIcon({
+  status
+}) {
+  const style = {
+    width: 14,
+    height: 14,
+    verticalAlign: "-2px",
+    marginRight: 5
+  };
+  if (status === "Voorbereiding") return /*#__PURE__*/React.createElement(Clock, {
+    style: style
+  });
+  if (status === "On hold") return /*#__PURE__*/React.createElement(PauseCircle, {
+    style: style
+  });
+  return null;
+}
+
+// ---- dimension-line budget bar (signature element) --------------------
+function DimensionBar({
+  label,
+  budget,
+  actual,
+  unit
+}) {
+  const max = Math.max(budget, actual) * 1.15 || 1;
+  const budgetX = budget / max * 100;
+  const actualX = actual / max * 100;
+  const over = actual > budget;
+  const overStart = Math.min(budgetX, 100);
+  const overEnd = Math.min(actualX, 100);
+  return /*#__PURE__*/React.createElement("div", {
+    className: "dimbar-row"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "dimbar-label"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "dimbar-cat"
+  }, label), /*#__PURE__*/React.createElement("span", {
+    className: "dimbar-nums"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "mono"
+  }, fmtEUR(actual)), /*#__PURE__*/React.createElement("span", {
+    className: "dimbar-of"
+  }, " / begroot "), /*#__PURE__*/React.createElement("span", {
+    className: "mono"
+  }, fmtEUR(budget)))), /*#__PURE__*/React.createElement("div", {
+    className: "dimbar-track"
+  }, [0, 25, 50, 75, 100].map(t => /*#__PURE__*/React.createElement("div", {
+    key: t,
+    className: "dimbar-tick",
+    style: {
+      left: `${t}%`
+    }
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "dimbar-fill",
+    style: {
+      width: `${Math.min(actualX, 100)}%`,
+      background: over ? "#b8391a" : "#2b4c6f"
+    }
+  }), over && actualX > 100 === false && /*#__PURE__*/React.createElement("div", {
+    className: "dimbar-overflow",
+    style: {
+      left: `${overStart}%`,
+      width: `${Math.max(overEnd - overStart, 0)}%`
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "dimbar-bracket",
+    style: {
+      left: `${Math.min(budgetX, 100)}%`
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "dimbar-bracket-cap"
+  }))));
+}
+
+// ---- main app -----------------------------------------------------------
+function TabCalc() {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [statusFilter, setStatusFilter] = useState("Alle");
+  const [activeTab, setActiveTab] = useState("projecten");
+  useEffect(() => {
+    let settled = false;
+    const timeoutId = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        setError("Het laden duurt ongewoon lang (langer dan 15 seconden). Controleer de internetverbinding en of het Supabase-project actief is.");
+      }
+    }, 15000);
+    Promise.all([fetchTable("projects"), fetchTable("clients"), fetchTable("employees"), fetchTable("budgetLines"), fetchTable("weeklyActuals"), fetchTable("progress"), fetchTable("changeOrders"), fetchTable("invoices"), fetchTable("historicalBenchmarks"), fetchTable("employeeUtilization")]).then(([projects, clients, employees, budgetLines, weeklyActuals, progress, changeOrders, invoices, historicalBenchmarks, employeeUtilization]) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      setData({
+        projects,
+        clients,
+        employees,
+        budgetLines,
+        weeklyActuals,
+        progress,
+        changeOrders,
+        invoices,
+        historicalBenchmarks,
+        employeeUtilization
+      });
+    }).catch(e => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      setError(e && (e.message || e.error_description || JSON.stringify(e)) || "Onbekende fout bij het laden van data.");
+    });
+    return () => clearTimeout(timeoutId);
+  }, []);
+  const enriched = useMemo(() => {
+    if (!data) return [];
+    return data.projects.map(p => {
+      const client = data.clients.find(c => c.id === p.klant_id);
+      const pl = data.employees.find(e => e.id === p.projectleider_id);
+      const budgetLines = data.budgetLines.filter(b => b.project_id === p.id);
+      const budgetTotal = budgetLines.reduce((s, b) => s + Number(b.begroot_bedrag), 0);
+      const actuals = data.weeklyActuals.filter(w => w.project_id === p.id);
+      const actualTotal = actuals.reduce((s, w) => s + Number(w.werkelijke_kosten), 0);
+      const progressRows = data.progress.filter(pr => pr.project_id === p.id).sort((a, b) => a.week_start.localeCompare(b.week_start));
+      const progressPct = progressRows.length ? Number(progressRows[progressRows.length - 1].voortgang_pct) : 0;
+      const risk = computeRisk(p, budgetTotal, actualTotal, progressPct);
+      const trend = computeTrendForecast(p, actuals, progressRows, budgetTotal, actualTotal);
+      const changeOrders = data.changeOrders.filter(c => c.project_id === p.id);
+      const invoices = data.invoices.filter(i => i.project_id === p.id);
+      const gefactureerd = invoices.reduce((s, i) => s + Number(i.bedrag), 0);
+      const ohw = actualTotal - gefactureerd;
+      const openMeerwerk = changeOrders.filter(c => ["Concept", "Ingediend", "Goedgekeurd"].includes(c.status)).reduce((s, c) => s + Number(c.bedrag), 0);
+      return {
+        ...p,
+        client,
+        pl,
+        budgetLines,
+        budgetTotal,
+        actuals,
+        actualTotal,
+        progressRows,
+        progressPct,
+        risk,
+        trend,
+        changeOrders,
+        invoices,
+        gefactureerd,
+        ohw,
+        openMeerwerk
+      };
+    });
+  }, [data]);
+  const riskBriefing = useMemo(() => {
+    return enriched.filter(p => p.status === "Lopend" && p.trend && p.trend.trendDeviationPct > 5).sort((a, b) => b.trend.impactEUR - a.trend.impactEUR).slice(0, 5);
+  }, [enriched]);
+  const benchmarkGroups = useMemo(() => {
+    if (!data) return [];
+    const entries = data.historicalBenchmarks.map(h => ({
+      vakgebied: h.vakgebied,
+      categorie: h.categorie,
+      begroot: Number(h.begroot_bedrag),
+      werkelijk: Number(h.werkelijk_bedrag),
+      bron: h.project_naam,
+      jaar: h.project_jaar,
+      archief: true
+    }));
+    enriched.filter(p => p.status === "Afgerond").forEach(p => {
+      CATS.forEach(cat => {
+        const bl = p.budgetLines.find(b => b.categorie === cat);
+        if (!bl) return;
+        const begroot = Number(bl.begroot_bedrag);
+        const werkelijk = p.actuals.filter(a => a.categorie === cat).reduce((s, a) => s + Number(a.werkelijke_kosten), 0);
+        entries.push({
+          vakgebied: p.vakgebied,
+          categorie: cat,
+          begroot,
+          werkelijk,
+          bron: p.naam,
+          jaar: new Date(p.werkelijke_einddatum || p.startdatum).getFullYear(),
+          archief: false
+        });
+      });
+    });
+    const map = {};
+    entries.forEach(e => {
+      const key = `${e.vakgebied}||${e.categorie}`;
+      if (!map[key]) map[key] = {
+        vakgebied: e.vakgebied,
+        categorie: e.categorie,
+        items: []
+      };
+      map[key].items.push(e);
+    });
+    return Object.values(map).map(g => {
+      const devs = g.items.map(i => i.begroot > 0 ? (i.werkelijk - i.begroot) / i.begroot * 100 : 0);
+      const avgDev = devs.reduce((s, v) => s + v, 0) / devs.length;
+      return {
+        ...g,
+        n: g.items.length,
+        avgDev
+      };
+    }).sort((a, b) => b.avgDev - a.avgDev);
+  }, [data, enriched]);
+  const benchmarkByVakgebied = useMemo(() => {
+    const map = {};
+    benchmarkGroups.forEach(g => {
+      if (!map[g.vakgebied]) map[g.vakgebied] = [];
+      map[g.vakgebied].push(g);
+    });
+    return map;
+  }, [benchmarkGroups]);
+  const utilization = useMemo(() => {
+    if (!data) return null;
+    const perEmployee = data.employees.map(e => {
+      const rows = data.employeeUtilization.filter(u => u.employee_id === e.id);
+      if (!rows.length) return null;
+      const avgGepland = rows.reduce((s, r) => s + Number(r.geplande_uren), 0) / rows.length;
+      const avgDeclarabel = rows.reduce((s, r) => s + Number(r.werkelijke_declarabele_uren), 0) / rows.length;
+      const gapCostTotal = rows.reduce((s, r) => s + (Number(r.geplande_uren) - Number(r.werkelijke_declarabele_uren)) * Number(e.kostprijs_uurtarief), 0);
+      const declarabiliteit = avgGepland > 0 ? avgDeclarabel / avgGepland * 100 : 0;
+      return {
+        ...e,
+        avgGepland,
+        avgDeclarabel,
+        declarabiliteit,
+        gapCostTotal,
+        weeks: rows.length
+      };
+    }).filter(Boolean).sort((a, b) => a.declarabiliteit - b.declarabiliteit);
+    const totalGapCost = perEmployee.reduce((s, e) => s + e.gapCostTotal, 0);
+    const periodWeeks = perEmployee.length ? perEmployee[0].weeks : 0;
+    const plMap = {};
+    enriched.filter(p => p.status === "Lopend" && p.pl).forEach(p => {
+      if (!plMap[p.pl.id]) plMap[p.pl.id] = {
+        naam: p.pl.naam,
+        total: 0,
+        atRisk: 0,
+        projects: []
+      };
+      plMap[p.pl.id].total++;
+      plMap[p.pl.id].projects.push(p.naam);
+      if (p.risk.key === "rood" || p.risk.key === "oranje") plMap[p.pl.id].atRisk++;
+    });
+    const plConcurrency = Object.values(plMap).sort((a, b) => b.atRisk - a.atRisk || b.total - a.total);
+    return {
+      perEmployee,
+      totalGapCost,
+      periodWeeks,
+      plConcurrency
+    };
+  }, [data, enriched]);
+  const meerwerkByPL = useMemo(() => {
+    if (!data) return [];
+    const map = {};
+    enriched.forEach(p => {
+      if (!p.pl) return;
+      p.changeOrders.forEach(c => {
+        const bedrag = Number(c.bedrag);
+        if (!map[p.pl.id]) map[p.pl.id] = {
+          naam: p.pl.naam,
+          count: 0,
+          geconstateerd: 0,
+          gefactureerd: 0,
+          openstaand: 0,
+          afgewezen: 0
+        };
+        const pl = map[p.pl.id];
+        pl.count++;
+        if (c.status === "Afgewezen") {
+          pl.afgewezen += bedrag;
+          return;
+        }
+        pl.geconstateerd += bedrag;
+        if (c.status === "Gefactureerd") pl.gefactureerd += bedrag;else pl.openstaand += bedrag;
+      });
+    });
+    return Object.values(map).map(pl => ({
+      ...pl,
+      conversieratio: pl.geconstateerd > 0 ? pl.gefactureerd / pl.geconstateerd * 100 : null
+    })).sort((a, b) => (a.conversieratio ?? 100) - (b.conversieratio ?? 100));
+  }, [data, enriched]);
+  const kpis = useMemo(() => {
+    if (!enriched.length) return null;
+    const lopend = enriched.filter(p => p.status === "Lopend");
+    const ohwTotal = enriched.reduce((s, p) => s + Math.max(p.ohw, 0), 0);
+    const atRisk = lopend.filter(p => p.risk.key === "rood" || p.risk.key === "oranje").length;
+    const avgDeviation = lopend.length ? lopend.reduce((s, p) => s + (p.risk.deviationPct || 0), 0) / lopend.length : 0;
+    const openMeerwerkTotal = enriched.reduce((s, p) => s + p.openMeerwerk, 0);
+    return {
+      ohwTotal,
+      atRisk,
+      lopendCount: lopend.length,
+      avgDeviation,
+      openMeerwerkTotal
+    };
+  }, [enriched]);
+  const filtered = useMemo(() => {
+    if (statusFilter === "Alle") return enriched;
+    return enriched.filter(p => p.status === statusFilter);
+  }, [enriched, statusFilter]);
+  const fontImport = `
+    @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+  `;
+  if (error) {
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: 40,
+        fontFamily: "sans-serif",
+        color: "#a1341a"
+      }
+    }, "Kon TabCalc-data niet laden: ", error);
+  }
+  if (!data || !kpis) {
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: 40,
+        fontFamily: "sans-serif",
+        color: "#4a5a61"
+      }
+    }, /*#__PURE__*/React.createElement("style", null, fontImport), "TabCalc laden…");
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    className: "tc-root"
+  }, /*#__PURE__*/React.createElement("style", null, `
+        ${fontImport}
+        .tc-root {
+          --paper: #E6E6E8;
+          --paper-line: rgba(28,43,51,0.10);
+          --ink: #1C2B33;
+          --ink-soft: #57666c;
+          --blue: #2B4C6F;
+          --blue-deep: #16324A;
+          --red: #B8391A;
+          --amber: #B9791A;
+          --green: #3C7A5C;
+          background: var(--paper);
+          color: var(--ink);
+          font-family: 'IBM Plex Sans', sans-serif;
+          min-height: 100%;
+          padding: 28px 32px 60px;
+          box-sizing: border-box;
+        }
+        .tc-root * { box-sizing: border-box; }
+        .mono { font-family: 'IBM Plex Mono', monospace; }
+        .tc-header {
+          display: flex; justify-content: space-between; align-items: flex-end;
+          border-bottom: 2px solid var(--ink); padding-bottom: 14px; margin-bottom: 22px;
+        }
+        .tc-wordmark {
+          font-family: 'Barlow Condensed', sans-serif; font-weight: 700;
+          font-size: 34px; letter-spacing: 0.5px; color: var(--blue-deep); line-height: 1;
+        }
+        .tc-wordmark span { color: var(--red); }
+        .tc-subtitle { font-size: 12.5px; color: var(--ink-soft); margin-top: 4px; letter-spacing: 0.3px; }
+        .tc-meta { text-align: right; font-size: 11px; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; }
+        .kpi-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 26px; }
+        .kpi-card {
+          background: #fff; border: 1px solid var(--paper-line); border-left: 3px solid var(--blue);
+          padding: 14px 16px; position: relative;
+        }
+        .kpi-card.warn { border-left-color: var(--red); }
+        .kpi-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--ink-soft); margin-bottom: 6px; }
+        .kpi-value { font-family: 'IBM Plex Mono', monospace; font-size: 24px; font-weight: 600; color: var(--blue-deep); }
+        .kpi-card.warn .kpi-value { color: var(--red); }
+        .kpi-sub { font-size: 11px; color: var(--ink-soft); margin-top: 3px; }
+
+        .filter-row { display: flex; gap: 8px; margin-bottom: 12px; }
+        .filter-btn {
+          font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 6px 12px;
+          border: 1px solid var(--ink-soft); background: transparent; color: var(--ink-soft); cursor: pointer;
+        }
+        .filter-btn.active { background: var(--blue-deep); color: #fff; border-color: var(--blue-deep); }
+
+        .register { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--paper-line); }
+        .register thead th {
+          text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px;
+          color: var(--ink-soft); padding: 9px 12px; border-bottom: 2px solid var(--ink);
+        }
+        .register tbody tr { border-bottom: 1px solid var(--paper-line); cursor: pointer; transition: background 0.1s; }
+        .register tbody tr:hover { background: #f2f4ee; }
+        .register td { padding: 11px 12px; font-size: 13px; vertical-align: middle; }
+        .register .code { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--ink-soft); }
+        .register .naam { font-weight: 500; }
+        .register .klant { color: var(--ink-soft); font-size: 12px; }
+        .register .num { font-family: 'IBM Plex Mono', monospace; text-align: right; }
+        .progress-mini { display: inline-block; width: 60px; height: 6px; background: var(--paper-line); position: relative; margin-right: 6px; vertical-align: middle; }
+        .progress-mini-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--blue); }
+
+        .stamp {
+          font-family: 'Barlow Condensed', sans-serif; font-weight: 700; letter-spacing: 0.6px;
+          border: 1.5px solid; border-radius: 3px; display: inline-block; transform: rotate(-1.5deg);
+          white-space: nowrap;
+        }
+
+        .back-btn {
+          display: inline-flex; align-items: center; gap: 6px; font-family: 'IBM Plex Mono', monospace;
+          font-size: 12px; color: var(--blue-deep); background: none; border: none; cursor: pointer; padding: 0; margin-bottom: 18px;
+        }
+        .detail-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 22px; flex-wrap: wrap; gap: 14px; }
+        .detail-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 26px; color: var(--blue-deep); line-height: 1.15; }
+        .detail-sub { font-size: 12.5px; color: var(--ink-soft); margin-top: 4px; }
+        .summary-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 28px; }
+        .summary-card { background: #fff; border: 1px solid var(--paper-line); padding: 12px 14px; }
+        .summary-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--ink-soft); margin-bottom: 5px; }
+        .summary-value { font-family: 'IBM Plex Mono', monospace; font-size: 18px; font-weight: 600; color: var(--blue-deep); }
+
+        .panel { background: #fff; border: 1px solid var(--paper-line); padding: 20px 22px; margin-bottom: 20px; }
+        .panel-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 600; font-size: 16px; letter-spacing: 0.3px; color: var(--ink); margin-bottom: 16px; text-transform: uppercase; border-bottom: 1px solid var(--paper-line); padding-bottom: 8px; }
+
+        .dimbar-row { margin-bottom: 18px; }
+        .dimbar-row:last-child { margin-bottom: 0; }
+        .dimbar-label { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 6px; }
+        .dimbar-cat { font-weight: 600; }
+        .dimbar-nums { color: var(--ink-soft); }
+        .dimbar-of { color: var(--ink-soft); }
+        .dimbar-track { position: relative; height: 16px; background: #f2f4ee; border: 1px solid var(--paper-line); }
+        .dimbar-tick { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--paper-line); }
+        .dimbar-fill { position: absolute; left: 0; top: 0; bottom: 0; opacity: 0.85; }
+        .dimbar-overflow {
+          position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(45deg, #b8391a, #b8391a 3px, transparent 3px, transparent 6px);
+          opacity: 0.55;
+        }
+        .dimbar-bracket { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--ink); }
+        .dimbar-bracket-cap { position: absolute; top: 0; left: -3px; width: 8px; height: 2px; background: var(--ink); }
+
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .mini-table { width: 100%; border-collapse: collapse; }
+        .mini-table th { text-align: left; font-size: 10px; text-transform: uppercase; color: var(--ink-soft); padding: 6px 8px; border-bottom: 1px solid var(--paper-line); }
+        .mini-table td { padding: 8px; font-size: 12.5px; border-bottom: 1px solid var(--paper-line); }
+        .mini-table .num { font-family: 'IBM Plex Mono', monospace; text-align: right; }
+        .pill { font-size: 10px; padding: 2px 7px; border-radius: 10px; font-family: 'IBM Plex Mono', monospace; }
+        .pill.betaald, .pill.gefactureerd, .pill.goedgekeurd { background: #e4ede4; color: var(--green); }
+        .pill.verzonden, .pill.ingediend { background: #f3e6d3; color: var(--amber); }
+        .pill.concept { background: #e4e6e9; color: var(--ink-soft); }
+        .pill.afgewezen { background: #f3ddd4; color: var(--red); }
+
+        .chart-wrap { height: 260px; }
+
+        .main-tabs { display: flex; gap: 4px; margin-bottom: 22px; border-bottom: 1px solid var(--paper-line); }
+        .main-tab {
+          font-family: 'Barlow Condensed', sans-serif; font-weight: 600; font-size: 14.5px; letter-spacing: 0.3px;
+          text-transform: uppercase; padding: 9px 16px; background: none; border: none; cursor: pointer;
+          color: var(--ink-soft); border-bottom: 2.5px solid transparent; margin-bottom: -1px;
+        }
+        .main-tab.active { color: var(--blue-deep); border-bottom-color: var(--blue-deep); }
+
+        .briefing-panel { background: #fff; border: 1px solid var(--paper-line); border-left: 3px solid var(--red); padding: 16px 20px; margin-bottom: 22px; }
+        .briefing-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 15px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--red); margin-bottom: 10px; }
+        .briefing-row { display: flex; justify-content: space-between; align-items: baseline; padding: 9px 0; border-top: 1px solid var(--paper-line); gap: 16px; }
+        .briefing-row:first-of-type { border-top: none; }
+        .briefing-name { font-weight: 600; font-size: 13px; cursor: pointer; }
+        .briefing-name:hover { text-decoration: underline; }
+        .briefing-insight { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+        .briefing-impact { font-family: 'IBM Plex Mono', monospace; font-weight: 600; color: var(--red); font-size: 14px; white-space: nowrap; }
+
+        .kb-table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--paper-line); margin-bottom: 20px; }
+        .kb-table thead th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--ink-soft); padding: 9px 12px; border-bottom: 2px solid var(--ink); }
+        .kb-table td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--paper-line); }
+        .kb-table .num { font-family: 'IBM Plex Mono', monospace; text-align: right; }
+        .kb-callout { background: #fff; border: 1px solid var(--paper-line); border-left: 3px solid var(--amber); padding: 14px 18px; margin-bottom: 20px; font-size: 13px; }
+        .kb-callout b { color: var(--amber); }
+
+        .insight-panel { background: #fff; border: 1px solid var(--paper-line); border-left: 3px solid var(--blue); padding: 16px 20px; margin-bottom: 20px; font-size: 13px; line-height: 1.5; }
+        .insight-panel-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 14px; text-transform: uppercase; color: var(--blue-deep); margin-bottom: 8px; }
+
+        .team-table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--paper-line); }
+        .team-table thead th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--ink-soft); padding: 9px 12px; border-bottom: 2px solid var(--ink); }
+        .team-table td { padding: 9px 12px; font-size: 13px; border-bottom: 1px solid var(--paper-line); }
+        .team-table .num { font-family: 'IBM Plex Mono', monospace; text-align: right; }
+        .decl-bar { display: inline-block; width: 70px; height: 6px; background: var(--paper-line); position: relative; margin-right: 8px; vertical-align: middle; }
+        .decl-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; }
+
+        .control-select {
+          font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 6px 10px;
+          border: 1px solid var(--ink-soft); background: #fff; color: var(--ink); cursor: pointer;
+        }
+        .control-row { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+        .control-label { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.4px; }
+        th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+        th.sortable:hover { color: var(--ink); }
+        th.sortable.active { color: var(--blue-deep); }
+        .sort-arrow { font-size: 9px; margin-left: 3px; display: inline-block; }
+      `), selected ? /*#__PURE__*/React.createElement(ProjectDetail, {
+    project: selected,
+    onBack: () => setSelected(null),
+    benchmarksForVakgebied: benchmarkByVakgebied[selected.vakgebied] || []
+  }) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "tc-header"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "tc-wordmark"
+  }, "TabCalc", /*#__PURE__*/React.createElement("span", null, ".")), /*#__PURE__*/React.createElement("div", {
+    className: "tc-subtitle"
+  }, "Real-time projectnacalculatie — TabStructure B.V.")), /*#__PURE__*/React.createElement("div", {
+    className: "tc-meta"
+  }, "PEILDATUM ", new Date().toLocaleDateString("nl-NL", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric"
+  }).toUpperCase(), /*#__PURE__*/React.createElement("br", null), enriched.length, " PROJECTEN IN REGISTER")), /*#__PURE__*/React.createElement("div", {
+    className: "main-tabs"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: `main-tab ${activeTab === "projecten" ? "active" : ""}`,
+    onClick: () => setActiveTab("projecten")
+  }, "Projecten"), /*#__PURE__*/React.createElement("button", {
+    className: `main-tab ${activeTab === "kennisbank" ? "active" : ""}`,
+    onClick: () => setActiveTab("kennisbank")
+  }, "Kennisbank"), /*#__PURE__*/React.createElement("button", {
+    className: `main-tab ${activeTab === "team" ? "active" : ""}`,
+    onClick: () => setActiveTab("team")
+  }, "Team & Inzetbaarheid")), activeTab === "projecten" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "kpi-strip"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: `kpi-card ${kpis.atRisk > 0 ? "warn" : ""}`
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "kpi-label"
+  }, "Projecten met risico"), /*#__PURE__*/React.createElement("div", {
+    className: "kpi-value"
+  }, kpis.atRisk, " / ", kpis.lopendCount), /*#__PURE__*/React.createElement("div", {
+    className: "kpi-sub"
+  }, "lopende projecten oranje of rood")), /*#__PURE__*/React.createElement("div", {
+    className: "kpi-card"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "kpi-label"
+  }, "Onderhanden werk (OHW)"), /*#__PURE__*/React.createElement("div", {
+    className: "kpi-value"
+  }, fmtEUR(kpis.ohwTotal)), /*#__PURE__*/React.createElement("div", {
+    className: "kpi-sub"
+  }, "besteed, nog niet gefactureerd")), /*#__PURE__*/React.createElement("div", {
+    className: `kpi-card ${kpis.avgDeviation > 5 ? "warn" : ""}`
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "kpi-label"
+  }, "Gem. verwachte marge-afwijking"), /*#__PURE__*/React.createElement("div", {
+    className: "kpi-value"
+  }, fmtPct(kpis.avgDeviation)), /*#__PURE__*/React.createElement("div", {
+    className: "kpi-sub"
+  }, "t.o.v. begroting, lopende projecten")), /*#__PURE__*/React.createElement("div", {
+    className: "kpi-card"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "kpi-label"
+  }, "Openstaand meerwerk"), /*#__PURE__*/React.createElement("div", {
+    className: "kpi-value"
+  }, fmtEUR(kpis.openMeerwerkTotal)), /*#__PURE__*/React.createElement("div", {
+    className: "kpi-sub"
+  }, "nog niet gefactureerd"))), riskBriefing.length > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "briefing-panel"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "briefing-title"
+  }, /*#__PURE__*/React.createElement(TriangleAlert, {
+    size: 14,
+    style: {
+      verticalAlign: "-2px",
+      marginRight: 6
+    }
+  }), "Risicobriefing — geprioriteerd op financiële impact"), riskBriefing.map(p => /*#__PURE__*/React.createElement("div", {
+    className: "briefing-row",
+    key: p.id
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "briefing-name",
+    onClick: () => setSelected(p)
+  }, p.naam), /*#__PURE__*/React.createElement("div", {
+    className: "briefing-insight"
+  }, "Kosten liepen de laatste ", p.trend.recentN, " weken gemiddeld", " ", p.trend.accelerationPct > 0 ? "+" : "", p.trend.accelerationPct.toFixed(0), "% t.o.v. het tempo daarvoor — bij dit tempo circa", " ", fmtEUR(p.trend.trendForecast), " totaal (", p.trend.trendDeviationPct > 0 ? "+" : "", p.trend.trendDeviationPct.toFixed(0), "% t.o.v. begroting).")), /*#__PURE__*/React.createElement("div", {
+    className: "briefing-impact"
+  }, "+", fmtEUR(p.trend.impactEUR))))), /*#__PURE__*/React.createElement(RiskScatter, {
+    projects: enriched.filter(p => p.status === "Lopend"),
+    onSelectProject: setSelected
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "filter-row"
+  }, ["Alle", "Lopend", "Afgerond", "Voorbereiding", "On hold"].map(s => /*#__PURE__*/React.createElement("button", {
+    key: s,
+    className: `filter-btn ${statusFilter === s ? "active" : ""}`,
+    onClick: () => setStatusFilter(s)
+  }, s.toUpperCase()))), /*#__PURE__*/React.createElement("table", {
+    className: "register"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Code"), /*#__PURE__*/React.createElement("th", null, "Project"), /*#__PURE__*/React.createElement("th", null, "Klant"), /*#__PURE__*/React.createElement("th", null, "Status"), /*#__PURE__*/React.createElement("th", null, "Voortgang"), /*#__PURE__*/React.createElement("th", {
+    className: "num"
+  }, "Begroot"), /*#__PURE__*/React.createElement("th", {
+    className: "num"
+  }, "Werkelijk"), /*#__PURE__*/React.createElement("th", {
+    className: "num"
+  }, "Verwacht eindresultaat"), /*#__PURE__*/React.createElement("th", null, "Risico"))), /*#__PURE__*/React.createElement("tbody", null, filtered.map(p => /*#__PURE__*/React.createElement("tr", {
+    key: p.id,
+    onClick: () => setSelected(p)
+  }, /*#__PURE__*/React.createElement("td", {
+    className: "code"
+  }, p.project_code), /*#__PURE__*/React.createElement("td", {
+    className: "naam"
+  }, p.naam), /*#__PURE__*/React.createElement("td", {
+    className: "klant"
+  }, p.client?.naam), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement(StatusIcon, {
+    status: p.status
+  }), p.status), /*#__PURE__*/React.createElement("td", null, p.status === "Voorbereiding" || p.status === "On hold" ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "var(--ink-soft)",
+      fontSize: 12
+    }
+  }, "—") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
+    className: "progress-mini"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "progress-mini-fill",
+    style: {
+      width: `${Math.min(p.progressPct, 100)}%`
+    }
+  })), /*#__PURE__*/React.createElement("span", {
+    className: "mono",
+    style: {
+      fontSize: 11.5
+    }
+  }, p.progressPct.toFixed(0), "%"))), /*#__PURE__*/React.createElement("td", {
+    className: "num"
+  }, fmtEUR(p.budgetTotal)), /*#__PURE__*/React.createElement("td", {
+    className: "num"
+  }, fmtEUR(p.actualTotal)), /*#__PURE__*/React.createElement("td", {
+    className: "num"
+  }, p.risk.forecast ? fmtEUR(p.risk.forecast) : "—"), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement(StampBadge, {
+    risk: p.risk,
+    size: "sm"
+  }))))))), activeTab === "kennisbank" && /*#__PURE__*/React.createElement(KennisbankView, {
+    groups: benchmarkGroups,
+    onSelectProject: setSelected,
+    enriched: enriched
+  }), activeTab === "team" && /*#__PURE__*/React.createElement(TeamView, {
+    utilization: utilization,
+    meerwerkByPL: meerwerkByPL,
+    onSelectProject: setSelected
+  })));
+}
+function RiskScatter({
+  projects,
+  onSelectProject
+}) {
+  if (!projects.length) return null;
+  const data = projects.map(p => ({
+    x: p.progressPct,
+    y: p.risk.deviationPct || 0,
+    z: p.budgetTotal,
+    naam: p.naam,
+    code: p.project_code,
+    risk: p.risk.key,
+    project: p
+  }));
+  const colors = {
+    groen: "#3C7A5C",
+    oranje: "#B9791A",
+    rood: "#B8391A"
+  };
+  const yMax = Math.max(20, ...data.map(d => d.y)) + 5;
+  const yMin = Math.min(-5, ...data.map(d => d.y)) - 5;
+  const CustomTooltip = ({
+    active,
+    payload
+  }) => {
+    if (!active || !payload?.length) return null;
+    const d = payload[0].payload;
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: "#fff",
+        border: "1px solid #1C2B33",
+        padding: "8px 10px",
+        fontFamily: "IBM Plex Mono",
+        fontSize: 12
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 600,
+        marginBottom: 3
+      }
+    }, d.naam), /*#__PURE__*/React.createElement("div", null, "Voortgang: ", d.x.toFixed(0), "%"), /*#__PURE__*/React.createElement("div", null, "Kostenafwijking: ", d.y > 0 ? "+" : "", d.y.toFixed(1), "%"));
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    className: "panel"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "panel-title"
+  }, "Risicoscatter — voortgang vs. verwachte kostenafwijking"), /*#__PURE__*/React.createElement("div", {
+    className: "chart-wrap"
+  }, /*#__PURE__*/React.createElement(ResponsiveContainer, {
+    width: "100%",
+    height: "100%"
+  }, /*#__PURE__*/React.createElement(ScatterChart, {
+    margin: {
+      top: 10,
+      right: 20,
+      left: -10,
+      bottom: 0
+    }
+  }, /*#__PURE__*/React.createElement(CartesianGrid, {
+    stroke: "rgba(28,43,51,0.10)"
+  }), /*#__PURE__*/React.createElement(XAxis, {
+    type: "number",
+    dataKey: "x",
+    domain: [0, 100],
+    unit: "%",
+    tick: {
+      fontSize: 10.5,
+      fontFamily: "IBM Plex Mono"
+    },
+    stroke: "#57666c",
+    name: "Voortgang"
+  }), /*#__PURE__*/React.createElement(YAxis, {
+    type: "number",
+    dataKey: "y",
+    domain: [yMin, yMax],
+    unit: "%",
+    tick: {
+      fontSize: 10.5,
+      fontFamily: "IBM Plex Mono"
+    },
+    stroke: "#57666c",
+    name: "Afwijking"
+  }), /*#__PURE__*/React.createElement(ZAxis, {
+    type: "number",
+    dataKey: "z",
+    range: [80, 400]
+  }), /*#__PURE__*/React.createElement(Tooltip, {
+    content: /*#__PURE__*/React.createElement(CustomTooltip, null),
+    cursor: {
+      strokeDasharray: "3 3"
+    }
+  }), /*#__PURE__*/React.createElement(ReferenceLine, {
+    y: 0,
+    stroke: "#57666c",
+    strokeDasharray: "2 2"
+  }), /*#__PURE__*/React.createElement(ReferenceLine, {
+    y: 15,
+    stroke: "#B8391A",
+    strokeDasharray: "4 3",
+    label: {
+      value: "actiegrens",
+      fontSize: 10,
+      fill: "#B8391A",
+      position: "insideTopRight"
+    }
+  }), /*#__PURE__*/React.createElement(Scatter, {
+    data: data,
+    onClick: d => onSelectProject(d.project),
+    cursor: "pointer"
+  }, data.map((d, i) => /*#__PURE__*/React.createElement(Cell, {
+    key: i,
+    fill: colors[d.risk],
+    fillOpacity: 0.75,
+    stroke: colors[d.risk]
+  })))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--ink-soft)",
+      marginTop: 4
+    }
+  }, "Bolgrootte = projectomvang (begroot). Klik op een project voor detail. Rechtsonder = ver gevorderd én toch al duur — hoogste prioriteit."));
+}
+function SortTh({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  align
+}) {
+  const active = sort.key === sortKey;
+  return /*#__PURE__*/React.createElement("th", {
+    className: `sortable ${align === "num" ? "num" : ""} ${active ? "active" : ""}`,
+    onClick: () => onSort(sortKey)
+  }, label, active && /*#__PURE__*/React.createElement("span", {
+    className: "sort-arrow"
+  }, sort.dir === "asc" ? "▲" : "▼"));
+}
+function KennisbankView({
+  groups
+}) {
+  const [vakFilter, setVakFilter] = useState("Alle");
+  const [catFilter, setCatFilter] = useState("Alle");
+  const [sort, setSort] = useState({
+    key: "avgDev",
+    dir: "desc"
+  });
+  const worst = groups[0];
+  const vakgebieden = useMemo(() => [...new Set(groups.map(g => g.vakgebied))].sort(), [groups]);
+  const handleSort = key => {
+    setSort(prev => prev.key === key ? {
+      key,
+      dir: prev.dir === "asc" ? "desc" : "asc"
+    } : {
+      key,
+      dir: key === "n" || key === "avgDev" ? "desc" : "asc"
+    });
+  };
+  const rows = useMemo(() => {
+    let list = groups;
+    if (vakFilter !== "Alle") list = list.filter(g => g.vakgebied === vakFilter);
+    if (catFilter !== "Alle") list = list.filter(g => g.categorie === catFilter);
+    const sorted = [...list].sort((a, b) => {
+      let av = a[sort.key],
+        bv = b[sort.key];
+      if (typeof av === "string") {
+        av = av.toLowerCase();
+        bv = bv.toLowerCase();
+      }
+      if (av < bv) return sort.dir === "asc" ? -1 : 1;
+      if (av > bv) return sort.dir === "asc" ? 1 : -1;
+      return 0;
+    });
+    return sorted;
+  }, [groups, vakFilter, catFilter, sort]);
+  return /*#__PURE__*/React.createElement("div", null, worst && /*#__PURE__*/React.createElement("div", {
+    className: "kb-callout"
+  }, /*#__PURE__*/React.createElement("b", null, "Signaal:"), " ", worst.vakgebied, "-projecten liepen historisch op ", /*#__PURE__*/React.createElement("b", null, worst.categorie), " gemiddeld", " ", /*#__PURE__*/React.createElement("b", null, worst.avgDev > 0 ? "+" : "", worst.avgDev.toFixed(0), "%"), " uit t.o.v. begroting (n=", worst.n, "). Overweeg hier standaard een risico-opslag in de calculatie."), /*#__PURE__*/React.createElement("div", {
+    className: "control-row"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "control-label"
+  }, "Filter:"), /*#__PURE__*/React.createElement("select", {
+    className: "control-select",
+    value: vakFilter,
+    onChange: e => setVakFilter(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "Alle"
+  }, "Alle vakgebieden"), vakgebieden.map(v => /*#__PURE__*/React.createElement("option", {
+    key: v,
+    value: v
+  }, v))), /*#__PURE__*/React.createElement("select", {
+    className: "control-select",
+    value: catFilter,
+    onChange: e => setCatFilter(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "Alle"
+  }, "Alle kostensoorten"), CATS.map(c => /*#__PURE__*/React.createElement("option", {
+    key: c,
+    value: c
+  }, c)))), /*#__PURE__*/React.createElement("table", {
+    className: "kb-table"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement(SortTh, {
+    label: "Vakgebied",
+    sortKey: "vakgebied",
+    sort: sort,
+    onSort: handleSort
+  }), /*#__PURE__*/React.createElement(SortTh, {
+    label: "Kostensoort",
+    sortKey: "categorie",
+    sort: sort,
+    onSort: handleSort
+  }), /*#__PURE__*/React.createElement(SortTh, {
+    label: "Aantal projecten",
+    sortKey: "n",
+    sort: sort,
+    onSort: handleSort,
+    align: "num"
+  }), /*#__PURE__*/React.createElement(SortTh, {
+    label: "Gem. afwijking",
+    sortKey: "avgDev",
+    sort: sort,
+    onSort: handleSort,
+    align: "num"
+  }))), /*#__PURE__*/React.createElement("tbody", null, rows.map(g => /*#__PURE__*/React.createElement("tr", {
+    key: `${g.vakgebied}-${g.categorie}`
+  }, /*#__PURE__*/React.createElement("td", null, g.vakgebied), /*#__PURE__*/React.createElement("td", null, g.categorie), /*#__PURE__*/React.createElement("td", {
+    className: "num"
+  }, g.n), /*#__PURE__*/React.createElement("td", {
+    className: "num",
+    style: {
+      color: g.avgDev > 10 ? "var(--red)" : g.avgDev > 3 ? "var(--amber)" : "var(--green)",
+      fontWeight: 600
+    }
+  }, g.avgDev > 0 ? "+" : "", g.avgDev.toFixed(1), "%"))))), rows.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: "var(--ink-soft)",
+      padding: "14px 0"
+    }
+  }, "Geen resultaten voor deze filtercombinatie."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--ink-soft)",
+      marginTop: 10
+    }
+  }, "Gebaseerd op afgeronde TabStructure-projecten en archiefprojecten (2024–2026). Wordt automatisch aangevuld zodra nieuwe projecten worden afgerond."));
+}
+function TeamView({
+  utilization,
+  meerwerkByPL,
+  onSelectProject
+}) {
+  const [vakFilter, setVakFilter] = useState("Alle");
+  const [sort, setSort] = useState({
+    key: "declarabiliteit",
+    dir: "asc"
+  });
+  const [plSort, setPlSort] = useState({
+    key: "conversieratio",
+    dir: "asc"
+  });
+  const vakgebieden = useMemo(() => utilization ? [...new Set(utilization.perEmployee.map(e => e.vakgebied))].sort() : [], [utilization]);
+  const handleSort = key => {
+    setSort(prev => prev.key === key ? {
+      key,
+      dir: prev.dir === "asc" ? "desc" : "asc"
+    } : {
+      key,
+      dir: key === "naam" || key === "functie" ? "asc" : "desc"
+    });
+  };
+  const handlePlSort = key => {
+    setPlSort(prev => prev.key === key ? {
+      key,
+      dir: prev.dir === "asc" ? "desc" : "asc"
+    } : {
+      key,
+      dir: key === "naam" ? "asc" : "desc"
+    });
+  };
+  const rows = useMemo(() => {
+    if (!utilization) return [];
+    let list = utilization.perEmployee;
+    if (vakFilter !== "Alle") list = list.filter(e => e.vakgebied === vakFilter);
+    return [...list].sort((a, b) => {
+      let av = a[sort.key],
+        bv = b[sort.key];
+      if (typeof av === "string") {
+        av = av.toLowerCase();
+        bv = bv.toLowerCase();
+      }
+      if (av < bv) return sort.dir === "asc" ? -1 : 1;
+      if (av > bv) return sort.dir === "asc" ? 1 : -1;
+      return 0;
+    });
+  }, [utilization, vakFilter, sort]);
+  const plRows = useMemo(() => {
+    return [...meerwerkByPL].sort((a, b) => {
+      let av = plSort.key === "conversieratio" ? a.conversieratio ?? 100 : a[plSort.key];
+      let bv = plSort.key === "conversieratio" ? b.conversieratio ?? 100 : b[plSort.key];
+      if (typeof av === "string") {
+        av = av.toLowerCase();
+        bv = bv.toLowerCase();
+      }
+      if (av < bv) return plSort.dir === "asc" ? -1 : 1;
+      if (av > bv) return plSort.dir === "asc" ? 1 : -1;
+      return 0;
+    });
+  }, [meerwerkByPL, plSort]);
+  if (!utilization) return null;
+  const {
+    totalGapCost,
+    periodWeeks,
+    plConcurrency,
+    perEmployee
+  } = utilization;
+  const capacitySignal = plConcurrency.find(pl => pl.total >= 2 && pl.atRisk >= 1);
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "kpi-strip",
+    style: {
+      gridTemplateColumns: "repeat(2, 1fr)"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "kpi-card warn"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "kpi-label"
+  }, "Niet-doorbelaste capaciteit"), /*#__PURE__*/React.createElement("div", {
+    className: "kpi-value"
+  }, fmtEUR(totalGapCost)), /*#__PURE__*/React.createElement("div", {
+    className: "kpi-sub"
+  }, "verschil gepland vs. declarabel, laatste ", periodWeeks, " weken, tegen kostprijs")), /*#__PURE__*/React.createElement("div", {
+    className: "kpi-card"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "kpi-label"
+  }, "Medewerkers gevolgd"), /*#__PURE__*/React.createElement("div", {
+    className: "kpi-value"
+  }, perEmployee.length), /*#__PURE__*/React.createElement("div", {
+    className: "kpi-sub"
+  }, "op basis van WFM-inzetplanning"))), capacitySignal && /*#__PURE__*/React.createElement("div", {
+    className: "insight-panel"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "insight-panel-title"
+  }, "Capaciteitssignaal"), "Projectleider ", /*#__PURE__*/React.createElement("b", null, capacitySignal.naam), " stuurt momenteel ", /*#__PURE__*/React.createElement("b", null, capacitySignal.total, " projecten"), " tegelijk aan (", capacitySignal.projects.join(", "), "), waarvan ", /*#__PURE__*/React.createElement("b", null, capacitySignal.atRisk), " met verhoogd risico. Dat kan erop wijzen dat er onvoldoende sturingscapaciteit is om tijdig bij te sturen op de risicoprojecten."), /*#__PURE__*/React.createElement("div", {
+    className: "control-row"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "control-label"
+  }, "Filter:"), /*#__PURE__*/React.createElement("select", {
+    className: "control-select",
+    value: vakFilter,
+    onChange: e => setVakFilter(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "Alle"
+  }, "Alle vakgebieden"), vakgebieden.map(v => /*#__PURE__*/React.createElement("option", {
+    key: v,
+    value: v
+  }, v)))), /*#__PURE__*/React.createElement("table", {
+    className: "team-table",
+    style: {
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement(SortTh, {
+    label: "Naam",
+    sortKey: "naam",
+    sort: sort,
+    onSort: handleSort
+  }), /*#__PURE__*/React.createElement(SortTh, {
+    label: "Functie",
+    sortKey: "functie",
+    sort: sort,
+    onSort: handleSort
+  }), /*#__PURE__*/React.createElement(SortTh, {
+    label: "Gem. gepland",
+    sortKey: "avgGepland",
+    sort: sort,
+    onSort: handleSort,
+    align: "num"
+  }), /*#__PURE__*/React.createElement(SortTh, {
+    label: "Gem. declarabel",
+    sortKey: "avgDeclarabel",
+    sort: sort,
+    onSort: handleSort,
+    align: "num"
+  }), /*#__PURE__*/React.createElement(SortTh, {
+    label: "Declarabiliteit",
+    sortKey: "declarabiliteit",
+    sort: sort,
+    onSort: handleSort
+  }), /*#__PURE__*/React.createElement(SortTh, {
+    label: `Niet-doorbelast (${periodWeeks} wk)`,
+    sortKey: "gapCostTotal",
+    sort: sort,
+    onSort: handleSort,
+    align: "num"
+  }))), /*#__PURE__*/React.createElement("tbody", null, rows.map(e => /*#__PURE__*/React.createElement("tr", {
+    key: e.id
+  }, /*#__PURE__*/React.createElement("td", null, e.naam), /*#__PURE__*/React.createElement("td", {
+    style: {
+      color: "var(--ink-soft)"
+    }
+  }, e.functie), /*#__PURE__*/React.createElement("td", {
+    className: "num mono"
+  }, e.avgGepland.toFixed(1), " u"), /*#__PURE__*/React.createElement("td", {
+    className: "num mono"
+  }, e.avgDeclarabel.toFixed(1), " u"), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+    className: "decl-bar"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "decl-bar-fill",
+    style: {
+      width: `${Math.min(e.declarabiliteit, 100)}%`,
+      background: e.declarabiliteit < 70 ? "var(--red)" : e.declarabiliteit < 82 ? "var(--amber)" : "var(--green)"
+    }
+  })), /*#__PURE__*/React.createElement("span", {
+    className: "mono",
+    style: {
+      fontSize: 11.5
+    }
+  }, e.declarabiliteit.toFixed(0), "%")), /*#__PURE__*/React.createElement("td", {
+    className: "num mono"
+  }, fmtEUR(e.gapCostTotal)))))), rows.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: "var(--ink-soft)",
+      padding: "8px 0 26px"
+    }
+  }, "Geen medewerkers voor dit vakgebied."), meerwerkByPL.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "panel-title",
+    style: {
+      background: "none",
+      border: "none",
+      padding: 0,
+      marginBottom: 12,
+      marginTop: 26
+    }
+  }, "Meerwerk-conversie per projectleider"), /*#__PURE__*/React.createElement("table", {
+    className: "team-table"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement(SortTh, {
+    label: "Projectleider",
+    sortKey: "naam",
+    sort: plSort,
+    onSort: handlePlSort
+  }), /*#__PURE__*/React.createElement(SortTh, {
+    label: "Aantal posten",
+    sortKey: "count",
+    sort: plSort,
+    onSort: handlePlSort,
+    align: "num"
+  }), /*#__PURE__*/React.createElement(SortTh, {
+    label: "Geconstateerd",
+    sortKey: "geconstateerd",
+    sort: plSort,
+    onSort: handlePlSort,
+    align: "num"
+  }), /*#__PURE__*/React.createElement(SortTh, {
+    label: "Gefactureerd",
+    sortKey: "gefactureerd",
+    sort: plSort,
+    onSort: handlePlSort,
+    align: "num"
+  }), /*#__PURE__*/React.createElement(SortTh, {
+    label: "Nog openstaand",
+    sortKey: "openstaand",
+    sort: plSort,
+    onSort: handlePlSort,
+    align: "num"
+  }), /*#__PURE__*/React.createElement(SortTh, {
+    label: "Conversieratio",
+    sortKey: "conversieratio",
+    sort: plSort,
+    onSort: handlePlSort
+  }))), /*#__PURE__*/React.createElement("tbody", null, plRows.map(pl => /*#__PURE__*/React.createElement("tr", {
+    key: pl.naam
+  }, /*#__PURE__*/React.createElement("td", null, pl.naam), /*#__PURE__*/React.createElement("td", {
+    className: "num mono"
+  }, pl.count), /*#__PURE__*/React.createElement("td", {
+    className: "num mono"
+  }, fmtEUR(pl.geconstateerd)), /*#__PURE__*/React.createElement("td", {
+    className: "num mono"
+  }, fmtEUR(pl.gefactureerd)), /*#__PURE__*/React.createElement("td", {
+    className: "num mono"
+  }, fmtEUR(pl.openstaand)), /*#__PURE__*/React.createElement("td", null, pl.conversieratio === null ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "var(--ink-soft)",
+      fontSize: 12
+    }
+  }, "—") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
+    className: "decl-bar"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "decl-bar-fill",
+    style: {
+      width: `${Math.min(pl.conversieratio, 100)}%`,
+      background: pl.conversieratio < 50 ? "var(--red)" : pl.conversieratio < 80 ? "var(--amber)" : "var(--green)"
+    }
+  })), /*#__PURE__*/React.createElement("span", {
+    className: "mono",
+    style: {
+      fontSize: 11.5
+    }
+  }, pl.conversieratio.toFixed(0), "%"))))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--ink-soft)",
+      marginTop: 10
+    }
+  }, "Conversieratio = gefactureerd meerwerk / totaal geconstateerd meerwerk (excl. afgewezen posten). Laag percentage kan wijzen op meerwerk dat wel is uitgevoerd maar nooit is doorbelast.")));
+}
+function ProjectDetail({
+  project: p,
+  onBack,
+  benchmarksForVakgebied = []
+}) {
+  const trendData = p.progressRows.map(pr => {
+    const weekActuals = p.actuals.filter(a => a.week_start === pr.week_start);
+    const weekCost = weekActuals.reduce((s, a) => s + Number(a.werkelijke_kosten), 0);
+    const cumCostUpTo = p.actuals.filter(a => a.week_start <= pr.week_start).reduce((s, a) => s + Number(a.werkelijke_kosten), 0);
+    const kostenPct = p.budgetTotal > 0 ? cumCostUpTo / p.budgetTotal * 100 : 0;
+    return {
+      week: fmtDate(pr.week_start),
+      voortgang: Number(pr.voortgang_pct),
+      kosten: Number(kostenPct.toFixed(1))
+    };
+  });
+  const statusColor = p.risk.key === "rood" ? "var(--red)" : p.risk.key === "oranje" ? "var(--amber)" : "var(--green)";
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("button", {
+    className: "back-btn",
+    onClick: onBack
+  }, /*#__PURE__*/React.createElement(ArrowLeft, {
+    size: 14
+  }), " TERUG NAAR PROJECTREGISTER"), /*#__PURE__*/React.createElement("div", {
+    className: "detail-header"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "detail-title"
+  }, p.naam), /*#__PURE__*/React.createElement("div", {
+    className: "detail-sub"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "mono"
+  }, p.project_code), " · ", p.client?.naam, " · ", p.vakgebied, " · Projectleider ", p.pl?.naam)), /*#__PURE__*/React.createElement(StampBadge, {
+    risk: p.risk
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "summary-grid"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "summary-card"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "summary-label"
+  }, "Contractsom"), /*#__PURE__*/React.createElement("div", {
+    className: "summary-value"
+  }, fmtEUR(p.contractsom))), /*#__PURE__*/React.createElement("div", {
+    className: "summary-card"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "summary-label"
+  }, "Begroot (kosten)"), /*#__PURE__*/React.createElement("div", {
+    className: "summary-value"
+  }, fmtEUR(p.budgetTotal))), /*#__PURE__*/React.createElement("div", {
+    className: "summary-card"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "summary-label"
+  }, "Werkelijk besteed"), /*#__PURE__*/React.createElement("div", {
+    className: "summary-value"
+  }, fmtEUR(p.actualTotal))), /*#__PURE__*/React.createElement("div", {
+    className: "summary-card"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "summary-label"
+  }, "Verwacht eindresultaat"), /*#__PURE__*/React.createElement("div", {
+    className: "summary-value",
+    style: {
+      color: statusColor
+    }
+  }, p.risk.forecast ? fmtEUR(p.risk.forecast) : "—")), /*#__PURE__*/React.createElement("div", {
+    className: "summary-card"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "summary-label"
+  }, "Afwijking t.o.v. begroting"), /*#__PURE__*/React.createElement("div", {
+    className: "summary-value",
+    style: {
+      color: statusColor
+    }
+  }, p.risk.deviationPct !== undefined ? `${p.risk.deviationPct > 0 ? "+" : ""}${p.risk.deviationPct.toFixed(1)}%` : "—"))), p.status === "Voorbereiding" && benchmarksForVakgebied.length > 0 && (() => {
+    const overallAvg = benchmarksForVakgebied.reduce((s, g) => s + g.avgDev * g.n, 0) / benchmarksForVakgebied.reduce((s, g) => s + g.n, 0);
+    const worstCat = [...benchmarksForVakgebied].sort((a, b) => b.avgDev - a.avgDev)[0];
+    const suggestedOpslag = Math.max(0, Math.ceil(overallAvg / 5) * 5);
+    return /*#__PURE__*/React.createElement("div", {
+      className: "insight-panel"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "insight-panel-title"
+    }, "Kennisbank-inzicht — ", p.vakgebied), "Vergelijkbare ", p.vakgebied.toLowerCase(), "-projecten (n=", benchmarksForVakgebied.reduce((s, g) => s + g.n, 0), ", uit afgeronde projecten en archief) kwamen gemiddeld ", /*#__PURE__*/React.createElement("b", null, overallAvg > 0 ? "+" : "", overallAvg.toFixed(1), "%"), " boven begroting uit, vooral op ", /*#__PURE__*/React.createElement("b", null, worstCat.categorie), " (", worstCat.avgDev > 0 ? "+" : "", worstCat.avgDev.toFixed(1), "%). Overweeg bij deze calculatie een risico-opslag van circa ", /*#__PURE__*/React.createElement("b", null, suggestedOpslag, "%"), " op ", worstCat.categorie.toLowerCase(), ".");
+  })(), p.status === "Lopend" && p.trend && /*#__PURE__*/React.createElement("div", {
+    className: "insight-panel",
+    style: {
+      borderLeftColor: p.trend.impactEUR > 0 ? "var(--red)" : "var(--green)"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "insight-panel-title",
+    style: {
+      color: p.trend.impactEUR > 0 ? "var(--red)" : "var(--blue-deep)"
+    }
+  }, "Trendraming (laatste ", p.trend.recentN, " weken)"), "Het kostentempo van de laatste ", p.trend.recentN, " weken lag gemiddeld", " ", /*#__PURE__*/React.createElement("b", null, fmtEUR(p.trend.recentAvg), "/week"), ", tegen ", /*#__PURE__*/React.createElement("b", null, fmtEUR(p.trend.priorAvg), "/week"), " daarvoor (", p.trend.accelerationPct > 0 ? "+" : "", p.trend.accelerationPct.toFixed(0), "%). Bij ongewijzigd tempo tot de verwachte einddatum eindigt dit project rond ", /*#__PURE__*/React.createElement("b", null, fmtEUR(p.trend.trendForecast)), " (", p.trend.trendDeviationPct > 0 ? "+" : "", p.trend.trendDeviationPct.toFixed(1), "% t.o.v. begroting) — dit is een aparte, actuelere raming dan de voortgang-gebaseerde raming hierboven."), (p.status === "Lopend" || p.status === "Afgerond") && (() => {
+    const steps = buildWaterfall(p);
+    return /*#__PURE__*/React.createElement("div", {
+      className: "panel"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "panel-title"
+    }, "Margebrug — van begrote naar ", p.status === "Afgerond" ? "werkelijke" : "verwachte", " marge"), /*#__PURE__*/React.createElement(WaterfallChart, {
+      steps: steps
+    }));
+  })(), p.budgetLines.length > 0 && (p.status === "Lopend" || p.status === "Afgerond") && /*#__PURE__*/React.createElement("div", {
+    className: "panel"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "panel-title"
+  }, "Begroot vs. werkelijk per kostensoort"), CATS.map(cat => {
+    const budget = Number(p.budgetLines.find(b => b.categorie === cat)?.begroot_bedrag || 0);
+    const actual = p.actuals.filter(a => a.categorie === cat).reduce((s, a) => s + Number(a.werkelijke_kosten), 0);
+    return /*#__PURE__*/React.createElement(DimensionBar, {
+      key: cat,
+      label: cat,
+      budget: budget,
+      actual: actual
+    });
+  })), trendData.length > 1 && /*#__PURE__*/React.createElement("div", {
+    className: "panel"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "panel-title"
+  }, "Voortgang vs. bestede kosten (cumulatief, % van begroting)"), /*#__PURE__*/React.createElement("div", {
+    className: "chart-wrap"
+  }, /*#__PURE__*/React.createElement(ResponsiveContainer, {
+    width: "100%",
+    height: "100%"
+  }, /*#__PURE__*/React.createElement(LineChart, {
+    data: trendData,
+    margin: {
+      top: 10,
+      right: 20,
+      left: -10,
+      bottom: 0
+    }
+  }, /*#__PURE__*/React.createElement(CartesianGrid, {
+    stroke: "rgba(28,43,51,0.10)"
+  }), /*#__PURE__*/React.createElement(XAxis, {
+    dataKey: "week",
+    tick: {
+      fontSize: 10.5,
+      fontFamily: "IBM Plex Mono"
+    },
+    stroke: "#57666c"
+  }), /*#__PURE__*/React.createElement(YAxis, {
+    tick: {
+      fontSize: 10.5,
+      fontFamily: "IBM Plex Mono"
+    },
+    stroke: "#57666c",
+    unit: "%"
+  }), /*#__PURE__*/React.createElement(Tooltip, {
+    contentStyle: {
+      fontFamily: "IBM Plex Mono",
+      fontSize: 12,
+      border: "1px solid #1C2B33"
+    },
+    formatter: (v, name) => [`${v}%`, name === "voortgang" ? "Fysieke voortgang" : "Bestede kosten"]
+  }), /*#__PURE__*/React.createElement(ReferenceLine, {
+    y: 100,
+    stroke: "#B8391A",
+    strokeDasharray: "4 3",
+    label: {
+      value: "begroting",
+      fontSize: 10,
+      fill: "#B8391A"
+    }
+  }), /*#__PURE__*/React.createElement(Line, {
+    type: "monotone",
+    dataKey: "voortgang",
+    stroke: "#2B4C6F",
+    strokeWidth: 2.5,
+    dot: false,
+    name: "voortgang"
+  }), /*#__PURE__*/React.createElement(Line, {
+    type: "monotone",
+    dataKey: "kosten",
+    stroke: "#B8391A",
+    strokeWidth: 2.5,
+    dot: false,
+    name: "kosten"
+  })))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 18,
+      fontSize: 11.5,
+      color: "var(--ink-soft)",
+      marginTop: 8
+    }
+  }, /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#2B4C6F"
+    }
+  }, "■"), " Fysieke voortgang"), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#B8391A"
+    }
+  }, "■"), " Bestede kosten (% van begroting)"))), /*#__PURE__*/React.createElement("div", {
+    className: "two-col"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "panel"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "panel-title"
+  }, "Meerwerk (", p.changeOrders.length, ")"), p.changeOrders.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: "var(--ink-soft)"
+    }
+  }, "Geen meerwerk geregistreerd.") : /*#__PURE__*/React.createElement("table", {
+    className: "mini-table"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Omschrijving"), /*#__PURE__*/React.createElement("th", null, "Datum"), /*#__PURE__*/React.createElement("th", {
+    className: "num"
+  }, "Bedrag"), /*#__PURE__*/React.createElement("th", null, "Status"))), /*#__PURE__*/React.createElement("tbody", null, p.changeOrders.map(c => /*#__PURE__*/React.createElement("tr", {
+    key: c.id
+  }, /*#__PURE__*/React.createElement("td", null, c.omschrijving), /*#__PURE__*/React.createElement("td", {
+    className: "mono",
+    style: {
+      fontSize: 11
+    }
+  }, fmtDate(c.datum)), /*#__PURE__*/React.createElement("td", {
+    className: "num"
+  }, fmtEUR(c.bedrag)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+    className: `pill ${c.status.toLowerCase()}`
+  }, c.status))))))), /*#__PURE__*/React.createElement("div", {
+    className: "panel"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "panel-title"
+  }, "Facturatie & onderhanden werk"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      fontSize: 13,
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("span", null, "Gefactureerd totaal"), /*#__PURE__*/React.createElement("span", {
+    className: "mono"
+  }, fmtEUR(p.gefactureerd))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      fontSize: 13,
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("span", null, "Onderhanden werk (kosten − facturatie)"), /*#__PURE__*/React.createElement("span", {
+    className: "mono",
+    style: {
+      color: p.ohw > 0 ? "var(--amber)" : "var(--green)"
+    }
+  }, fmtEUR(p.ohw))), /*#__PURE__*/React.createElement("table", {
+    className: "mini-table"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Factuur"), /*#__PURE__*/React.createElement("th", null, "Type"), /*#__PURE__*/React.createElement("th", null, "Datum"), /*#__PURE__*/React.createElement("th", {
+    className: "num"
+  }, "Bedrag"), /*#__PURE__*/React.createElement("th", null, "Status"))), /*#__PURE__*/React.createElement("tbody", null, p.invoices.map(i => /*#__PURE__*/React.createElement("tr", {
+    key: i.id
+  }, /*#__PURE__*/React.createElement("td", {
+    className: "mono",
+    style: {
+      fontSize: 11
+    }
+  }, i.factuurnummer), /*#__PURE__*/React.createElement("td", null, i.type), /*#__PURE__*/React.createElement("td", {
+    className: "mono",
+    style: {
+      fontSize: 11
+    }
+  }, fmtDate(i.datum)), /*#__PURE__*/React.createElement("td", {
+    className: "num"
+  }, fmtEUR(i.bedrag)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+    className: `pill ${i.status.toLowerCase()}`
+  }, i.status)))))))));
+}
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(/*#__PURE__*/React.createElement(TabCalc, null));
+
+</script>
+
+</body>
+</html>
